@@ -1,10 +1,12 @@
 "use client";
 
-import { Search, Bell } from "lucide-react";
+import { Search, Bell, Sun, Moon } from "lucide-react";
 import { useDashboardStore } from "@/store/dashboard-store";
+import { useTheme } from "@/components/layout/theme-provider";
 
 export function Header() {
   const { searchQuery, setSearchQuery } = useDashboardStore();
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-zinc-200 px-6 dark:border-zinc-800" data-testid="header">
@@ -20,6 +22,9 @@ export function Header() {
         />
       </div>
       <div className="flex items-center gap-4">
+        <button onClick={toggleTheme} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" data-testid="theme-toggle">
+          {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+        </button>
         <button className="relative rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" data-testid="notifications-btn">
           <Bell size={18} />
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />

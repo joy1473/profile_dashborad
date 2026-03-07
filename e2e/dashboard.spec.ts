@@ -113,6 +113,20 @@ test.describe("헤더", () => {
   });
 });
 
+test.describe("다크모드", () => {
+  test("다크모드 토글이 동작한다", async ({ page }) => {
+    await page.goto("/dashboard");
+    const toggle = page.getByTestId("theme-toggle");
+    await expect(toggle).toBeVisible();
+
+    await toggle.click();
+    await expect(page.locator("html")).toHaveClass(/dark/);
+
+    await toggle.click();
+    await expect(page.locator("html")).not.toHaveClass(/dark/);
+  });
+});
+
 test.describe("분석 페이지", () => {
   test("바 차트와 영역 차트가 렌더링된다", async ({ page }) => {
     await page.goto("/analytics");
