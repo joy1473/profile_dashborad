@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SaaS Dashboard
 
-## Getting Started
+데이터 시각화 및 관리 대시보드 — Next.js 15 + TypeScript + Tailwind CSS 4
 
-First, run the development server:
+## 기술 스택
+
+- **Next.js 15** (App Router, Turbopack)
+- **TypeScript**
+- **Tailwind CSS 4**
+- **Recharts** — 차트 시각화
+- **Zustand** — 상태 관리
+- **Lucide React** — 아이콘
+- **Playwright** — E2E 테스트
+
+## 페이지 구성
+
+| 경로 | 설명 |
+|------|------|
+| `/dashboard` | 메트릭 카드, 매출/트래픽 차트, 최근 활동 |
+| `/analytics` | 월별 매출 비교(바 차트), 사용자 증가 추이(영역 차트) |
+| `/users` | 사용자 목록, 역할/상태 뱃지, 활성/비활성 필터 |
+| `/settings` | 프로필 편집, 알림 토글 설정 |
+
+## 시작하기
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+http://localhost:3000 에서 확인
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 빌드
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm build
+pnpm start
+```
 
-## Learn More
+## 테스트
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# Playwright 브라우저 설치 (최초 1회)
+npx playwright install chromium
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# E2E 테스트 실행
+npx playwright test
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# UI 모드로 실행
+npx playwright test --ui
+```
 
-## Deploy on Vercel
+## 프로젝트 구조
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+src/
+├── app/
+│   ├── (dashboard)/
+│   │   ├── dashboard/page.tsx
+│   │   ├── analytics/page.tsx
+│   │   ├── users/page.tsx
+│   │   ├── settings/page.tsx
+│   │   └── layout.tsx
+│   ├── layout.tsx
+│   └── page.tsx
+├── components/
+│   ├── charts/
+│   ├── layout/
+│   └── ui/
+├── lib/
+├── store/
+└── types/
+e2e/
+└── dashboard.spec.ts
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 배포
+
+```bash
+vercel
+```
