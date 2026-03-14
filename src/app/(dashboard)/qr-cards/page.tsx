@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { QrCode, Download, Plus, Trash2, Eye, Globe, X } from "lucide-react";
+import { QrCode, Download, Plus, Trash2, Eye, Globe, X, Camera } from "lucide-react";
 import QRCode from "qrcode";
 import type { CardProfile } from "@/types/card-profile";
 import { generateVCard, generateUniqueId } from "@/lib/card-profiles";
@@ -22,6 +22,8 @@ export default function QrCardsPage() {
   const [formEmail, setFormEmail] = useState("");
   const [formPhone, setFormPhone] = useState("");
   const [formWebsites, setFormWebsites] = useState<string[]>([""]);
+  const [formImage, setFormImage] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const qrRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -80,6 +82,18 @@ export default function QrCardsPage() {
     a.click();
   }
 
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 500 * 1024) {
+      alert("이미지는 500KB 이하만 가능합니다.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setFormImage(reader.result as string);
+    reader.readAsDataURL(file);
+  }
+
   function handleAddProfile() {
     if (!formName || !formEmail || !formPhone) return;
     const websites = formWebsites.filter((w) => w.trim() !== "");
@@ -91,6 +105,7 @@ export default function QrCardsPage() {
       email: formEmail,
       phone: formPhone,
       websites,
+      image: formImage || undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -105,6 +120,7 @@ export default function QrCardsPage() {
     setFormEmail("");
     setFormPhone("");
     setFormWebsites([""]);
+    setFormImage("");
     setShowForm(false);
   }
 
@@ -156,6 +172,42 @@ export default function QrCardsPage() {
       {showForm && (
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
           <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 mb-4">새 명함 등록</h3>
+
+          {/* 이미지 업로드 */}
+          <div className="flex items-center gap-4 mb-4">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="relative flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed border-zinc-300 hover:border-blue-400 transition-colors overflow-hidden shrink-0 dark:border-zinc-600"
+            >
+              {formImage ? (
+                <img src={formImage} alt="미리보기" className="h-full w-full object-cover" />
+              ) : (
+                <Camera size={20} className="text-zinc-400" />
+              )}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="hidden"
+            />
+            <div className="text-xs text-zinc-500">
+              <p>프로필 이미지 (선택)</p>
+              <p>500KB 이하 JPG, PNG</p>
+              {formImage && (
+                <button
+                  type="button"
+                  onClick={() => setFormImage("")}
+                  className="text-red-500 hover:text-red-600 mt-1"
+                >
+                  이미지 삭제
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input
               placeholder="이름 *"
@@ -244,9 +296,13 @@ export default function QrCardsPage() {
               onClick={() => handleSelectProfile(profile)}
             >
               <div className="flex items-center gap-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 font-bold dark:bg-blue-900 dark:text-blue-300">
-                  {profile.name[0]}
-                </div>
+                {profile.image ? (
+                  <img src={profile.image} alt={profile.name} className="h-10 w-10 rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 font-bold shrink-0 dark:bg-blue-900 dark:text-blue-300">
+                    {profile.name[0]}
+                  </div>
+                )}
                 <div>
                   <p className="font-medium text-zinc-900 dark:text-zinc-50">{profile.name}</p>
                   <p className="text-xs text-zinc-500">{profile.email} · {profile.phone}</p>

@@ -82,9 +82,13 @@ export default function PublicProfilePage({ params }: { params: Promise<{ unique
         <div className="rounded-2xl bg-white shadow-xl overflow-hidden">
           {/* 상단 헤더 */}
           <div className="bg-gradient-to-r from-blue-600 to-blue-800 px-6 py-8 text-center text-white">
-            <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-white/20 text-3xl font-bold">
-              {profile.name[0]}
-            </div>
+            {profile.image ? (
+              <img src={profile.image} alt={profile.name} className="mx-auto mb-3 h-20 w-20 rounded-full object-cover border-3 border-white/30" />
+            ) : (
+              <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-white/20 text-3xl font-bold">
+                {profile.name[0]}
+              </div>
+            )}
             <h1 className="text-2xl font-bold">{profile.name}</h1>
           </div>
 
