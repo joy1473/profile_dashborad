@@ -1,34 +1,37 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { QrCode, Download, Plus, Trash2, Eye } from "lucide-react";
+import { QrCode, Download, Plus, Trash2, Eye, Globe, X } from "lucide-react";
 import QRCode from "qrcode";
 import type { CardProfile } from "@/types/card-profile";
 import { generateVCard, generateUniqueId } from "@/lib/card-profiles";
 
-// 초기 사용자 데이터
 const INITIAL_PROFILES: Omit<CardProfile, "id" | "created_at" | "updated_at">[] = [
-  { user_id: "", unique_id: "eunah-jo", name: "조은아", email: "joytec@naver.com", phone: "010-2648-6726" },
-  { user_id: "", unique_id: "taejun-park", name: "박태준", email: "eybbye@gmail.com", phone: "010-6261-0970" },
-  { user_id: "", unique_id: "insuk-shin", name: "신인숙", email: "ppeanut@naver.com", phone: "010-8653-0836" },
-  { user_id: "", unique_id: "sangjin-hong", name: "홍상진", email: "sjhong76@gmail.com", phone: "010-6211-9683" },
+  { user_id: "", unique_id: "eunah-jo", name: "조은아", email: "joytec@naver.com", phone: "010-2648-6726", websites: [] },
+  { user_id: "", unique_id: "taejun-park", name: "박태준", email: "eybbye@gmail.com", phone: "010-6261-0970", websites: [] },
+  { user_id: "", unique_id: "insuk-shin", name: "신인숙", email: "ppeanut@naver.com", phone: "010-8653-0836", websites: [] },
+  { user_id: "", unique_id: "sangjin-hong", name: "홍상진", email: "sjhong76@gmail.com", phone: "010-6211-9683", websites: [] },
 ];
 
 export default function QrCardsPage() {
   const [profiles, setProfiles] = useState<CardProfile[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<CardProfile | null>(null);
-  const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const [qrDataUrl, setQrDataUrl] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ name: "", email: "", phone: "", company: "", position: "" });
+  const [formName, setFormName] = useState("");
+  const [formEmail, setFormEmail] = useState("");
+  const [formPhone, setFormPhone] = useState("");
+  const [formWebsites, setFormWebsites] = useState<string[]>([""]);
   const qrRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    // localStorage에서 프로필 로드 (Supabase 연동 전 임시)
     const saved = localStorage.getItem("card_profiles");
     if (saved) {
-      setProfiles(JSON.parse(saved));
+      const parsed: CardProfile[] = JSON.parse(saved);
+      // 기존 데이터 마이그레이션 (websites 필드 없는 경우)
+      const migrated = parsed.map((p) => ({ ...p, websites: p.websites ?? [] }));
+      setProfiles(migrated);
     } else {
-      // 초기 데이터 설정
       const initial: CardProfile[] = INITIAL_PROFILES.map((p, i) => ({
         ...p,
         id: String(i + 1),
@@ -47,13 +50,10 @@ export default function QrCardsPage() {
 
   async function handleSelectProfile(profile: CardProfile) {
     setSelectedProfile(profile);
-    const baseUrl = window.location.origin;
-    const url = `${baseUrl}/u/${profile.unique_id}`;
+    const url = `${window.location.origin}/u/${profile.unique_id}`;
     try {
       const dataUrl = await QRCode.toDataURL(url, {
-        width: 280,
-        margin: 2,
-        color: { dark: "#1e40af", light: "#ffffff" },
+        width: 280, margin: 2, color: { dark: "#1e40af", light: "#ffffff" },
       });
       setQrDataUrl(dataUrl);
     } catch {
@@ -81,24 +81,31 @@ export default function QrCardsPage() {
   }
 
   function handleAddProfile() {
-    if (!formData.name || !formData.email || !formData.phone) return;
+    if (!formName || !formEmail || !formPhone) return;
+    const websites = formWebsites.filter((w) => w.trim() !== "");
     const newProfile: CardProfile = {
       id: String(Date.now()),
       user_id: "",
-      unique_id: generateUniqueId(formData.name),
-      name: formData.name,
-      email: formData.email,
-      phone: formData.phone,
-      company: formData.company || undefined,
-      position: formData.position || undefined,
+      unique_id: generateUniqueId(formName),
+      name: formName,
+      email: formEmail,
+      phone: formPhone,
+      websites,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
     const updated = [newProfile, ...profiles];
     saveProfiles(updated);
-    setFormData({ name: "", email: "", phone: "", company: "", position: "" });
-    setShowForm(false);
+    resetForm();
     handleSelectProfile(newProfile);
+  }
+
+  function resetForm() {
+    setFormName("");
+    setFormEmail("");
+    setFormPhone("");
+    setFormWebsites([""]);
+    setShowForm(false);
   }
 
   function handleDeleteProfile(id: string) {
@@ -109,6 +116,24 @@ export default function QrCardsPage() {
       setSelectedProfile(null);
       setQrDataUrl("");
     }
+  }
+
+  function updateWebsite(index: number, value: string) {
+    const updated = [...formWebsites];
+    updated[index] = value;
+    setFormWebsites(updated);
+  }
+
+  function addWebsiteField() {
+    setFormWebsites([...formWebsites, ""]);
+  }
+
+  function removeWebsiteField(index: number) {
+    if (formWebsites.length <= 1) {
+      setFormWebsites([""]);
+      return;
+    }
+    setFormWebsites(formWebsites.filter((_, i) => i !== index));
   }
 
   return (
@@ -131,39 +156,63 @@ export default function QrCardsPage() {
       {showForm && (
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
           <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 mb-4">새 명함 등록</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input
               placeholder="이름 *"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              value={formName}
+              onChange={(e) => setFormName(e.target.value)}
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             />
             <input
               placeholder="이메일 *"
               type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              value={formEmail}
+              onChange={(e) => setFormEmail(e.target.value)}
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             />
             <input
               placeholder="핸드폰 *"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-            />
-            <input
-              placeholder="회사 (선택)"
-              value={formData.company}
-              onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-            />
-            <input
-              placeholder="직책 (선택)"
-              value={formData.position}
-              onChange={(e) => setFormData({ ...formData, position: e.target.value })}
+              value={formPhone}
+              onChange={(e) => setFormPhone(e.target.value)}
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             />
           </div>
+
+          {/* 홈페이지 N개 입력 */}
+          <div className="mt-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Globe size={14} className="text-zinc-500" />
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">홈페이지</span>
+              <button
+                type="button"
+                onClick={addWebsiteField}
+                className="ml-auto flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+              >
+                <Plus size={12} />
+                추가
+              </button>
+            </div>
+            <div className="space-y-2">
+              {formWebsites.map((url, i) => (
+                <div key={i} className="flex gap-2">
+                  <input
+                    placeholder="https://example.com"
+                    value={url}
+                    onChange={(e) => updateWebsite(i, e.target.value)}
+                    className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeWebsiteField(i)}
+                    className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-red-500 dark:hover:bg-zinc-800"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="mt-4 flex gap-2">
             <button
               onClick={handleAddProfile}
@@ -172,7 +221,7 @@ export default function QrCardsPage() {
               등록
             </button>
             <button
-              onClick={() => setShowForm(false)}
+              onClick={resetForm}
               className="rounded-lg border border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400"
             >
               취소
@@ -201,8 +250,11 @@ export default function QrCardsPage() {
                 <div>
                   <p className="font-medium text-zinc-900 dark:text-zinc-50">{profile.name}</p>
                   <p className="text-xs text-zinc-500">{profile.email} · {profile.phone}</p>
-                  {profile.company && (
-                    <p className="text-xs text-zinc-400">{profile.company}{profile.position ? ` · ${profile.position}` : ""}</p>
+                  {profile.websites?.length > 0 && (
+                    <p className="text-xs text-blue-500 flex items-center gap-1 mt-0.5">
+                      <Globe size={10} />
+                      {profile.websites.length}개 홈페이지
+                    </p>
                   )}
                 </div>
               </div>

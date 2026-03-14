@@ -8,8 +8,9 @@ export function generateVCard(profile: CardProfile): string {
     `EMAIL:${profile.email}`,
     `TEL;TYPE=CELL:${profile.phone}`,
   ];
-  if (profile.company) lines.push(`ORG:${profile.company}`);
-  if (profile.position) lines.push(`TITLE:${profile.position}`);
+  for (const url of profile.websites ?? []) {
+    if (url) lines.push(`URL:${url}`);
+  }
   lines.push("END:VCARD");
   return lines.join("\r\n");
 }

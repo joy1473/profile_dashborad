@@ -1,17 +1,16 @@
 "use client";
 
 import { useState, useEffect, use } from "react";
-import { Download, Mail, Phone, Building2, Briefcase } from "lucide-react";
+import { Download, Mail, Phone, Globe } from "lucide-react";
 import QRCode from "qrcode";
 import type { CardProfile } from "@/types/card-profile";
 import { generateVCard } from "@/lib/card-profiles";
 
-// 기본 프로필 데이터 (Supabase 연동 전)
 const DEFAULT_PROFILES: Record<string, CardProfile> = {
-  "eunah-jo": { id: "1", user_id: "", unique_id: "eunah-jo", name: "조은아", email: "joytec@naver.com", phone: "010-2648-6726", created_at: "", updated_at: "" },
-  "taejun-park": { id: "2", user_id: "", unique_id: "taejun-park", name: "박태준", email: "eybbye@gmail.com", phone: "010-6261-0970", created_at: "", updated_at: "" },
-  "insuk-shin": { id: "3", user_id: "", unique_id: "insuk-shin", name: "신인숙", email: "ppeanut@naver.com", phone: "010-8653-0836", created_at: "", updated_at: "" },
-  "sangjin-hong": { id: "4", user_id: "", unique_id: "sangjin-hong", name: "홍상진", email: "sjhong76@gmail.com", phone: "010-6211-9683", created_at: "", updated_at: "" },
+  "eunah-jo": { id: "1", user_id: "", unique_id: "eunah-jo", name: "조은아", email: "joytec@naver.com", phone: "010-2648-6726", websites: [], created_at: "", updated_at: "" },
+  "taejun-park": { id: "2", user_id: "", unique_id: "taejun-park", name: "박태준", email: "eybbye@gmail.com", phone: "010-6261-0970", websites: [], created_at: "", updated_at: "" },
+  "insuk-shin": { id: "3", user_id: "", unique_id: "insuk-shin", name: "신인숙", email: "ppeanut@naver.com", phone: "010-8653-0836", websites: [], created_at: "", updated_at: "" },
+  "sangjin-hong": { id: "4", user_id: "", unique_id: "sangjin-hong", name: "홍상진", email: "sjhong76@gmail.com", phone: "010-6211-9683", websites: [], created_at: "", updated_at: "" },
 };
 
 export default function PublicProfilePage({ params }: { params: Promise<{ uniqueId: string }> }) {
@@ -22,7 +21,6 @@ export default function PublicProfilePage({ params }: { params: Promise<{ unique
 
   useEffect(() => {
     async function load() {
-      // localStorage에서 먼저 찾기
       const saved = localStorage.getItem("card_profiles");
       let found: CardProfile | null = null;
 
@@ -30,8 +28,6 @@ export default function PublicProfilePage({ params }: { params: Promise<{ unique
         const profiles: CardProfile[] = JSON.parse(saved);
         found = profiles.find((p) => p.unique_id === uniqueId) ?? null;
       }
-
-      // 기본 데이터에서 찾기
       if (!found) {
         found = DEFAULT_PROFILES[uniqueId] ?? null;
       }
@@ -39,15 +35,11 @@ export default function PublicProfilePage({ params }: { params: Promise<{ unique
       setProfile(found);
 
       if (found) {
-        const url = window.location.href;
-        const dataUrl = await QRCode.toDataURL(url, {
-          width: 200,
-          margin: 2,
-          color: { dark: "#1e40af", light: "#ffffff" },
+        const dataUrl = await QRCode.toDataURL(window.location.href, {
+          width: 200, margin: 2, color: { dark: "#1e40af", light: "#ffffff" },
         });
         setQrDataUrl(dataUrl);
       }
-
       setLoading(false);
     }
     load();
@@ -87,7 +79,6 @@ export default function PublicProfilePage({ params }: { params: Promise<{ unique
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-zinc-100 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
-        {/* 명함 카드 */}
         <div className="rounded-2xl bg-white shadow-xl overflow-hidden">
           {/* 상단 헤더 */}
           <div className="bg-gradient-to-r from-blue-600 to-blue-800 px-6 py-8 text-center text-white">
@@ -95,12 +86,6 @@ export default function PublicProfilePage({ params }: { params: Promise<{ unique
               {profile.name[0]}
             </div>
             <h1 className="text-2xl font-bold">{profile.name}</h1>
-            {profile.position && (
-              <p className="mt-1 text-blue-200">{profile.position}</p>
-            )}
-            {profile.company && (
-              <p className="text-blue-300 text-sm">{profile.company}</p>
-            )}
           </div>
 
           {/* 연락처 정보 */}
@@ -119,18 +104,18 @@ export default function PublicProfilePage({ params }: { params: Promise<{ unique
               <Phone size={18} className="text-blue-600 shrink-0" />
               <span>{profile.phone}</span>
             </a>
-            {profile.company && (
-              <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-700">
-                <Building2 size={18} className="text-blue-600 shrink-0" />
-                <span>{profile.company}</span>
-              </div>
-            )}
-            {profile.position && (
-              <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-700">
-                <Briefcase size={18} className="text-blue-600 shrink-0" />
-                <span>{profile.position}</span>
-              </div>
-            )}
+            {(profile.websites ?? []).map((url, i) => (
+              <a
+                key={i}
+                href={url.startsWith("http") ? url : `https://${url}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50 transition-colors"
+              >
+                <Globe size={18} className="text-blue-600 shrink-0" />
+                <span className="truncate">{url}</span>
+              </a>
+            ))}
           </div>
 
           {/* QR 코드 */}

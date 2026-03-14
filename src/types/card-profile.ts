@@ -5,8 +5,7 @@ export interface CardProfile {
   name: string;
   email: string;
   phone: string;
-  company?: string;
-  position?: string;
+  websites: string[];
   created_at: string;
   updated_at: string;
 }
