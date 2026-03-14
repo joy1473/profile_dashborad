@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BarChart3, Users, Settings, Menu, X } from "lucide-react";
+import { LayoutDashboard, BarChart3, Users, Settings, Menu, X, QrCode } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/store/dashboard-store";
 
@@ -10,6 +10,7 @@ const navItems = [
   { href: "/dashboard", label: "대시보드", icon: LayoutDashboard },
   { href: "/analytics", label: "분석", icon: BarChart3 },
   { href: "/users", label: "사용자", icon: Users },
+  { href: "/qr-cards", label: "QR 명함", icon: QrCode },
   { href: "/settings", label: "설정", icon: Settings },
 ];
 
