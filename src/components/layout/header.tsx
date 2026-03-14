@@ -1,12 +1,26 @@
 "use client";
 
-import { Search, Bell, Sun, Moon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Search, Bell, Sun, Moon, LogOut } from "lucide-react";
 import { useDashboardStore } from "@/store/dashboard-store";
 import { useTheme } from "@/components/layout/theme-provider";
+import { supabase } from "@/lib/supabase";
+import { getDisplayName, getAvatarUrl, signOut } from "@/lib/auth";
 
 export function Header() {
   const { searchQuery, setSearchQuery } = useDashboardStore();
   const { theme, toggleTheme } = useTheme();
+  const [displayName, setDisplayName] = useState("사용자");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setDisplayName(getDisplayName(user));
+        setAvatarUrl(getAvatarUrl(user));
+      }
+    });
+  }, []);
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-zinc-200 px-6 dark:border-zinc-800" data-testid="header">
@@ -30,9 +44,20 @@ export function Header() {
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
         </button>
         <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-full bg-zinc-300 dark:bg-zinc-700" data-testid="user-avatar" />
-          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">관리자</span>
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" data-testid="user-avatar" />
+          ) : (
+            <div className="h-8 w-8 rounded-full bg-zinc-300 dark:bg-zinc-700" data-testid="user-avatar" />
+          )}
+          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{displayName}</span>
         </div>
+        <button
+          onClick={signOut}
+          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          title="로그아웃"
+        >
+          <LogOut size={18} />
+        </button>
       </div>
     </header>
   );
