@@ -8,6 +8,12 @@ export interface User {
   avatar?: string;
 }
 
+export interface UpdateProfileInput {
+  name?: string;
+  role?: "admin" | "user" | "viewer";
+  status?: "active" | "inactive";
+}
+
 export interface MetricCard {
   title: string;
   value: string;

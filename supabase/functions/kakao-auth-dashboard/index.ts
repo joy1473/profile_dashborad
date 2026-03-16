@@ -83,21 +83,26 @@ Deno.serve(async (req) => {
       user_metadata: userMeta,
     })
 
-    if (createError && createError.message.includes('already been registered')) {
-      let page = 1
-      while (!user) {
-        const { data: { users } } = await supabase.auth.admin.listUsers({ page, perPage: 100 })
-        if (!users || users.length === 0) break
-        user = users.find((u: { email?: string }) => u.email === kakaoEmail)
-        page++
+    if (createError) {
+      // 이미 등록된 사용자이거나 DB 트리거 에러 → 기존 사용자 찾아서 업데이트
+      const isExisting = createError.message.includes('already been registered')
+        || createError.message.includes('Database error')
+      if (isExisting) {
+        let page = 1
+        while (!user) {
+          const { data: { users } } = await supabase.auth.admin.listUsers({ page, perPage: 100 })
+          if (!users || users.length === 0) break
+          user = users.find((u: { email?: string }) => u.email === kakaoEmail)
+          page++
+        }
+        if (user) {
+          await supabase.auth.admin.updateUserById(user.id, { user_metadata: userMeta })
+        }
+      } else {
+        throw createError
       }
-      if (user) {
-        await supabase.auth.admin.updateUserById(user.id, { user_metadata: userMeta })
-      }
-    } else if (createError) {
-      throw createError
     } else {
-      void createData.user
+      user = createData.user
     }
 
     // 4) 세션 생성
