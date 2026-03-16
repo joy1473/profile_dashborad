@@ -8,13 +8,18 @@ export const metrics: MetricCard[] = [
 ];
 
 export const revenueData: ChartData[] = [
-  { name: "1월", revenue: 3200, users: 1800 },
-  { name: "2월", revenue: 4100, users: 2000 },
-  { name: "3월", revenue: 3800, users: 2200 },
-  { name: "4월", revenue: 5200, users: 2400 },
-  { name: "5월", revenue: 4800, users: 2100 },
-  { name: "6월", revenue: 6100, users: 2600 },
-  { name: "7월", revenue: 5900, users: 2430 },
+  { name: "1월", date: "2025-01-01", revenue: 3200, users: 1800 },
+  { name: "2월", date: "2025-02-01", revenue: 4100, users: 2000 },
+  { name: "3월", date: "2025-03-01", revenue: 3800, users: 2200 },
+  { name: "4월", date: "2025-04-01", revenue: 5200, users: 2400 },
+  { name: "5월", date: "2025-05-01", revenue: 4800, users: 2100 },
+  { name: "6월", date: "2025-06-01", revenue: 6100, users: 2600 },
+  { name: "7월", date: "2025-07-01", revenue: 5900, users: 2430 },
+  { name: "8월", date: "2025-08-01", revenue: 6400, users: 2700 },
+  { name: "9월", date: "2025-09-01", revenue: 5800, users: 2550 },
+  { name: "10월", date: "2025-10-01", revenue: 6900, users: 2850 },
+  { name: "11월", date: "2025-11-01", revenue: 7500, users: 2950 },
+  { name: "12월", date: "2025-12-01", revenue: 7200, users: 3100 },
 ];
 
 export const categoryData: ChartData[] = [

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { ToastProvider } from "@/components/ui/toast";
+import { DashboardSkeleton } from "@/components/skeletons/dashboard-skeleton";
 import { getSession, onAuthStateChange } from "@/lib/auth";
 import type { Session } from "@supabase/supabase-js";
 
@@ -31,24 +33,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [router]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (!session) return null;
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      <Sidebar />
-      <div className="lg:pl-64">
-        <Header />
-        <main className="p-6" data-testid="main-content">
-          {children}
-        </main>
+    <ToastProvider>
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+        <Sidebar />
+        <div className="lg:pl-64">
+          <Header />
+          <main className="p-6" data-testid="main-content">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </ToastProvider>
   );
 }

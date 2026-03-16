@@ -43,6 +43,18 @@ test.describe("네비게이션", () => {
     await page.waitForURL(/\/settings/);
     await expect(page.getByTestId("page-title")).toHaveText("설정");
 
+    await page.getByTestId("nav-board").click();
+    await page.waitForURL(/\/board/);
+    await expect(page.getByTestId("page-title")).toHaveText("보드");
+
+    await page.getByTestId("nav-graph").click();
+    await page.waitForURL(/\/graph/);
+    await expect(page.getByTestId("page-title")).toHaveText("그래프");
+
+    await page.getByTestId("nav-qr-cards").click();
+    await page.waitForURL(/\/qr-cards/);
+    await expect(page.getByTestId("page-title")).toHaveText("QR 명함");
+
     await page.getByTestId("nav-dashboard").click();
     await page.waitForURL(/\/dashboard/);
     await expect(page.getByTestId("page-title")).toHaveText("대시보드");

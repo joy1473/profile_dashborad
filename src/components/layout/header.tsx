@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Search, Bell, Sun, Moon, LogOut } from "lucide-react";
+import { Search, Bell, Sun, Moon, Monitor, LogOut } from "lucide-react";
 import { useDashboardStore } from "@/store/dashboard-store";
 import { useTheme } from "@/components/layout/theme-provider";
 import { supabase } from "@/lib/supabase";
@@ -9,7 +9,7 @@ import { getDisplayName, getAvatarUrl, signOut } from "@/lib/auth";
 
 export function Header() {
   const { searchQuery, setSearchQuery } = useDashboardStore();
-  const { theme, toggleTheme } = useTheme();
+  const { mode, setMode } = useTheme();
   const [displayName, setDisplayName] = useState("사용자");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
@@ -36,8 +36,18 @@ export function Header() {
         />
       </div>
       <div className="flex items-center gap-4">
-        <button onClick={toggleTheme} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" data-testid="theme-toggle">
-          {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+        <button
+          onClick={() => {
+            const next = mode === "light" ? "dark" : mode === "dark" ? "system" : "light";
+            setMode(next);
+          }}
+          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          data-testid="theme-toggle"
+          title={mode === "light" ? "라이트 모드" : mode === "dark" ? "다크 모드" : "시스템 모드"}
+        >
+          {mode === "light" && <Sun size={18} />}
+          {mode === "dark" && <Moon size={18} />}
+          {mode === "system" && <Monitor size={18} />}
         </button>
         <button className="relative rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" data-testid="notifications-btn">
           <Bell size={18} />

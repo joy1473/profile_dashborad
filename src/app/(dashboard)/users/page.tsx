@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
-import { users as allUsers } from "@/lib/mock-data";
+import { fetchProfiles } from "@/lib/users";
 import { cn } from "@/lib/utils";
+import type { User } from "@/types";
 
 const roleColors = {
   admin: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
@@ -18,7 +19,14 @@ const statusColors = {
 
 export default function UsersPage() {
   const [filter, setFilter] = useState<"all" | "active" | "inactive">("all");
-  const filtered = filter === "all" ? allUsers : allUsers.filter((u) => u.status === filter);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchProfiles().then(setUsers).finally(() => setLoading(false));
+  }, []);
+
+  const filtered = filter === "all" ? users : users.filter((u) => u.status === filter);
 
   return (
     <div>
@@ -43,34 +51,38 @@ export default function UsersPage() {
 
       <Card>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm" data-testid="users-table">
-            <thead>
-              <tr className="border-b border-zinc-200 dark:border-zinc-800">
-                <th className="pb-3 text-left font-medium text-zinc-500">이름</th>
-                <th className="pb-3 text-left font-medium text-zinc-500">이메일</th>
-                <th className="pb-3 text-left font-medium text-zinc-500">역할</th>
-                <th className="pb-3 text-left font-medium text-zinc-500">상태</th>
-                <th className="pb-3 text-left font-medium text-zinc-500">가입일</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((user) => (
-                <tr key={user.id} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800" data-testid={`user-row-${user.id}`}>
-                  <td className="py-3 font-medium text-zinc-900 dark:text-zinc-50">{user.name}</td>
-                  <td className="py-3 text-zinc-600 dark:text-zinc-400">{user.email}</td>
-                  <td className="py-3">
-                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", roleColors[user.role])}>{user.role}</span>
-                  </td>
-                  <td className="py-3">
-                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", statusColors[user.status])}>
-                      {user.status === "active" ? "활성" : "비활성"}
-                    </span>
-                  </td>
-                  <td className="py-3 text-zinc-500">{user.joinedAt}</td>
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-zinc-400">로딩 중...</div>
+          ) : (
+            <table className="w-full text-sm" data-testid="users-table">
+              <thead>
+                <tr className="border-b border-zinc-200 dark:border-zinc-800">
+                  <th className="pb-3 text-left font-medium text-zinc-500">이름</th>
+                  <th className="pb-3 text-left font-medium text-zinc-500">이메일</th>
+                  <th className="pb-3 text-left font-medium text-zinc-500">역할</th>
+                  <th className="pb-3 text-left font-medium text-zinc-500">상태</th>
+                  <th className="pb-3 text-left font-medium text-zinc-500">가입일</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.map((user) => (
+                  <tr key={user.id} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800" data-testid={`user-row-${user.id}`}>
+                    <td className="py-3 font-medium text-zinc-900 dark:text-zinc-50">{user.name}</td>
+                    <td className="py-3 text-zinc-600 dark:text-zinc-400">{user.email}</td>
+                    <td className="py-3">
+                      <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", roleColors[user.role])}>{user.role}</span>
+                    </td>
+                    <td className="py-3">
+                      <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", statusColors[user.status])}>
+                        {user.status === "active" ? "활성" : "비활성"}
+                      </span>
+                    </td>
+                    <td className="py-3 text-zinc-500">{user.joinedAt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </Card>
     </div>

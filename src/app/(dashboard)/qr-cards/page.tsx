@@ -156,12 +156,13 @@ export default function QrCardsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">QR 명함</h1>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50" data-testid="page-title">QR 명함</h1>
           <p className="text-sm text-zinc-500 mt-1">QR코드로 명함을 공유하세요</p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          data-testid="add-card-btn"
         >
           <Plus size={16} />
           명함 추가
@@ -170,7 +171,7 @@ export default function QrCardsPage() {
 
       {/* 명함 추가 폼 */}
       {showForm && (
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950" data-testid="card-form">
           <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 mb-4">새 명함 등록</h3>
 
           {/* 이미지 업로드 */}
@@ -284,7 +285,7 @@ export default function QrCardsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 명함 리스트 */}
-        <div className="lg:col-span-2 space-y-3">
+        <div className="lg:col-span-2 space-y-3" data-testid="card-list">
           {profiles.map((profile) => (
             <div
               key={profile.id}
@@ -294,6 +295,7 @@ export default function QrCardsPage() {
                   : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
               }`}
               onClick={() => handleSelectProfile(profile)}
+              data-testid={`card-item-${profile.unique_id}`}
             >
               <div className="flex items-center gap-4">
                 {profile.image ? (
@@ -350,7 +352,7 @@ export default function QrCardsPage() {
         </div>
 
         {/* QR 코드 미리보기 */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950" data-testid="qr-panel">
           <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 mb-4 flex items-center gap-2">
             <QrCode size={18} />
             QR 코드
