@@ -5,7 +5,8 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 
 export function redirectToKakaoLogin(): void {
   const state = crypto.randomUUID();
-  sessionStorage.setItem("kakao_oauth_state", state);
+  // localStorage로 변경 — 모바일 인앱 브라우저/새 탭에서도 state 유지
+  localStorage.setItem("kakao_oauth_state", state);
 
   const redirectUri = `${window.location.origin}/auth/kakao/callback`;
   const params = new URLSearchParams({
@@ -23,15 +24,26 @@ export function isKakaoCallback(): boolean {
 
 export async function handleKakaoCallback(): Promise<boolean> {
   const params = new URLSearchParams(window.location.search);
+
+  // 카카오가 에러로 리다이렉트한 경우 (개발모드 차단, 사용자 취소 등)
+  const kakaoError = params.get("error");
+  const kakaoErrorDesc = params.get("error_description");
+  if (kakaoError) {
+    const msg = kakaoErrorDesc || kakaoError;
+    throw new Error(`카카오 인증 실패: ${msg}`);
+  }
+
   const code = params.get("code");
   const state = params.get("state");
-  const savedState = sessionStorage.getItem("kakao_oauth_state");
+  const savedState = localStorage.getItem("kakao_oauth_state");
 
   if (!code) return false;
-  if (state !== savedState) {
-    throw new Error("CSRF 검증 실패");
+
+  // CSRF 검증 — localStorage 사용, state 없으면 경고만 (호환성)
+  if (savedState && state !== savedState) {
+    throw new Error("CSRF 검증 실패: 다른 탭에서 로그인을 시도했거나 세션이 만료되었습니다.");
   }
-  sessionStorage.removeItem("kakao_oauth_state");
+  localStorage.removeItem("kakao_oauth_state");
 
   const redirectUri = `${window.location.origin}/auth/kakao/callback`;
 
@@ -42,8 +54,14 @@ export async function handleKakaoCallback(): Promise<boolean> {
   });
 
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error ?? "카카오 로그인 실패");
+    let errorMsg = "카카오 로그인 실패";
+    try {
+      const err = await res.json();
+      errorMsg = err.error ?? errorMsg;
+    } catch {
+      errorMsg = `서버 오류 (${res.status})`;
+    }
+    throw new Error(errorMsg);
   }
 
   const { token, type } = await res.json();
@@ -53,6 +71,8 @@ export async function handleKakaoCallback(): Promise<boolean> {
     type: type ?? "magiclink",
   });
 
-  if (error) throw error;
+  if (error) {
+    throw new Error(`세션 생성 실패: ${error.message}`);
+  }
   return true;
 }
