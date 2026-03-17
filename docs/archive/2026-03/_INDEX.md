@@ -14,6 +14,20 @@
 | realtime-notifications | Complete | 100% | 2026-03-16 | 4 |
 | subtasks | Complete | 98% | 2026-03-16 | 4 |
 | users-enhancement | Complete | 95% | 2026-03-17 | 4 |
+| analytics-report-builder | Complete | 97% | 2026-03-17 | 4 |
+
+## analytics-report-builder
+
+- **Duration**: 2026-03-17 (1 session)
+- **Match Rate**: 93% -> 97% (gap fixes, no iteration cycle)
+- **Files**: 14 new + 1 modified (~2,900 lines)
+- **Dependencies**: papaparse (CSV parsing)
+- **Key Feature**: Board 이슈 첨부 문서 기반 리포트 빌더 (Template, Q&A, 이력 관리)
+- **Documents**:
+  - [analytics-report-builder.plan.md](analytics-report-builder/analytics-report-builder.plan.md)
+  - [analytics-report-builder.design.md](analytics-report-builder/analytics-report-builder.design.md)
+  - [analytics-report-builder.analysis.md](analytics-report-builder/analytics-report-builder.analysis.md)
+  - [analytics-report-builder.report.md](analytics-report-builder/analytics-report-builder.report.md)
 
 ## users-enhancement
 
