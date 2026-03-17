@@ -19,6 +19,11 @@ export default function KakaoCallbackPage() {
       })
       .catch((err) => {
         setError(err.message);
+        fetch("/api/auth-log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "로그인 실패", target: err.message }),
+        }).catch(() => {});
       });
   }, [router]);
 

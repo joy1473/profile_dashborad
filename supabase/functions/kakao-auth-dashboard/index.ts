@@ -20,6 +20,16 @@ function getCorsHeaders(req: Request): Record<string, string> {
   }
 }
 
+function authLog(step: string, success: boolean, detail?: Record<string, unknown>) {
+  console.log(JSON.stringify({
+    event: 'kakao_auth',
+    step,
+    success,
+    ...detail,
+    timestamp: new Date().toISOString(),
+  }))
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req)
 
@@ -31,11 +41,14 @@ Deno.serve(async (req) => {
     const { code, redirect_uri } = await req.json()
 
     if (!code) {
+      authLog('request', false, { error: 'code is required' })
       return new Response(JSON.stringify({ error: 'code is required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    authLog('request', true, { redirect_uri })
 
     // 1) 카카오 access_token 교환
     const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
@@ -52,11 +65,14 @@ Deno.serve(async (req) => {
 
     const tokenData = await tokenRes.json()
     if (tokenData.error) {
+      authLog('token_exchange', false, { error: tokenData.error_description })
       return new Response(JSON.stringify({ error: tokenData.error_description }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    authLog('token_exchange', true)
 
     // 2) 카카오 프로필 조회
     const profileRes = await fetch('https://kapi.kakao.com/v2/user/me', {
@@ -67,6 +83,8 @@ Deno.serve(async (req) => {
     const kakaoId = String(profile.id)
     const nickname = profile.kakao_account?.profile?.nickname ?? profile.properties?.nickname ?? '사용자'
     const avatarUrl = profile.kakao_account?.profile?.profile_image_url ?? profile.properties?.profile_image ?? null
+
+    authLog('profile', true, { kakao_id: kakaoId, nickname })
 
     // 3) Supabase admin으로 사용자 생성/로그인
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -84,10 +102,10 @@ Deno.serve(async (req) => {
     })
 
     if (createError) {
-      // 이미 등록된 사용자이거나 DB 트리거 에러 → 기존 사용자 찾아서 업데이트
       const isExisting = createError.message.includes('already been registered')
         || createError.message.includes('Database error')
       if (isExisting) {
+        authLog('user_upsert', true, { kakao_id: kakaoId, action: 'existing_user' })
         let page = 1
         while (!user) {
           const { data: { users } } = await supabase.auth.admin.listUsers({ page, perPage: 100 })
@@ -99,9 +117,11 @@ Deno.serve(async (req) => {
           await supabase.auth.admin.updateUserById(user.id, { user_metadata: userMeta })
         }
       } else {
+        authLog('user_upsert', false, { kakao_id: kakaoId, error: createError.message })
         throw createError
       }
     } else {
+      authLog('user_upsert', true, { kakao_id: kakaoId, action: 'new_user' })
       user = createData.user
     }
 
@@ -110,17 +130,31 @@ Deno.serve(async (req) => {
       type: 'magiclink',
       email: kakaoEmail,
     })
-    if (linkError) throw linkError
+    if (linkError) {
+      authLog('link_generate', false, { kakao_id: kakaoId, error: linkError.message })
+      throw linkError
+    }
+
+    authLog('link_generate', true, { kakao_id: kakaoId, nickname })
 
     const linkUrl = new URL(linkData.properties.action_link)
     const token = linkUrl.searchParams.get('token')
     const type = linkUrl.searchParams.get('type') ?? 'magiclink'
+
+    // 5) 로그인 성공 활동 기록
+    await supabase.from('activities').insert({
+      user_id: user?.id ?? null,
+      user_name: nickname,
+      action: '로그인 성공',
+      target: '카카오 OAuth',
+    })
 
     return new Response(
       JSON.stringify({ token, type, nickname, avatar_url: avatarUrl }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (err) {
+    authLog('error', false, { error: err.message })
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

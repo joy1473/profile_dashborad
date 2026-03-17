@@ -1,17 +1,19 @@
 {
-  "currentFeature": "bid-document-builder",
-  "phase": "design",
-  "matchRate": 93,
+  "currentFeature": "login-logging",
+  "phase": "plan",
+  "matchRate": null,
   "history": [
     {
       "action": "plan_created",
-      "feature": "analytics-report-builder",
+      "feature": "login-logging",
       "timestamp": "2026-03-17T00:00:00Z"
     },
     {
-      "action": "design_created",
-      "feature": "analytics-report-builder",
-      "timestamp": "2026-03-17T00:00:00Z"
+      "action": "archived",
+      "feature": "bid-document-builder",
+      "timestamp": "2026-03-17T00:00:00Z",
+      "matchRate": 95,
+      "archivedTo": "docs/archive/2026-03/bid-document-builder/"
     }
   ]
 }
