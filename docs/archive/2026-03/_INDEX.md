@@ -15,6 +15,34 @@
 | subtasks | Complete | 98% | 2026-03-16 | 4 |
 | users-enhancement | Complete | 95% | 2026-03-17 | 4 |
 | analytics-report-builder | Complete | 97% | 2026-03-17 | 4 |
+| bid-document-builder | Complete | 95% | 2026-03-17 | 4 |
+| login-logging | Complete | 93% | 2026-03-17 | 4 |
+
+## login-logging
+
+- **Duration**: 2026-03-17 (1 session)
+- **Match Rate**: 93% (first pass, no iteration)
+- **Files**: 1 new + 2 modified (~53 lines)
+- **Dependencies**: 0 new
+- **Key Feature**: Edge Function 구조화 로그 + /api/auth-log 실패 기록 + activities 테이블 로그인 이벤트
+- **Documents**:
+  - [login-logging.plan.md](login-logging/login-logging.plan.md)
+  - [login-logging.design.md](login-logging/login-logging.design.md)
+  - [login-logging.analysis.md](login-logging/login-logging.analysis.md)
+  - [login-logging.report.md](login-logging/login-logging.report.md)
+
+## bid-document-builder
+
+- **Duration**: 2026-03-01 ~ 2026-03-17
+- **Match Rate**: 95% (first pass, no iteration needed)
+- **Files**: 15 new components + 2 lib/type, 10 old files deleted (~2,500 lines)
+- **Dependencies**: papaparse removed
+- **Key Feature**: 입찰문서 작성기 — 제안서 7단계 + 견적서 4단계 위자드, 인쇄/PDF, 버전 이력
+- **Documents**:
+  - [bid-document-builder.plan.md](bid-document-builder/bid-document-builder.plan.md)
+  - [bid-document-builder.design.md](bid-document-builder/bid-document-builder.design.md)
+  - [bid-document-builder.analysis.md](bid-document-builder/bid-document-builder.analysis.md)
+  - [bid-document-builder.report.md](bid-document-builder/bid-document-builder.report.md)
 
 ## analytics-report-builder
 

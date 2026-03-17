@@ -1,12 +1,14 @@
 {
-  "currentFeature": "login-logging",
-  "phase": "plan",
+  "currentFeature": null,
+  "phase": null,
   "matchRate": null,
   "history": [
     {
-      "action": "plan_created",
+      "action": "archived",
       "feature": "login-logging",
-      "timestamp": "2026-03-17T00:00:00Z"
+      "timestamp": "2026-03-17T00:00:00Z",
+      "matchRate": 93,
+      "archivedTo": "docs/archive/2026-03/login-logging/"
     },
     {
       "action": "archived",
