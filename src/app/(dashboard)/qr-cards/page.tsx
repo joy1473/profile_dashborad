@@ -3,18 +3,20 @@
 import { useState, useEffect, useRef } from "react";
 import { QrCode, Download, Plus, Trash2, Eye, Globe, X, Camera } from "lucide-react";
 import QRCode from "qrcode";
+import { useToast } from "@/components/ui/toast";
 import type { CardProfile } from "@/types/card-profile";
-import { generateVCard, generateUniqueId } from "@/lib/card-profiles";
-
-const INITIAL_PROFILES: Omit<CardProfile, "id" | "created_at" | "updated_at">[] = [
-  { user_id: "", unique_id: "eunah-jo", name: "조은아", email: "joytec@naver.com", phone: "010-2648-6726", websites: [] },
-  { user_id: "", unique_id: "taejun-park", name: "박태준", email: "eybbye@gmail.com", phone: "010-6261-0970", websites: [] },
-  { user_id: "", unique_id: "insuk-shin", name: "신인숙", email: "ppeanut@naver.com", phone: "010-8653-0836", websites: [] },
-  { user_id: "", unique_id: "sangjin-hong", name: "홍상진", email: "sjhong76@gmail.com", phone: "010-6211-9683", websites: [] },
-];
+import {
+  generateVCard,
+  generateUniqueId,
+  fetchCardProfiles,
+  createCardProfile,
+  deleteCardProfile,
+} from "@/lib/card-profiles";
+import { supabase } from "@/lib/supabase";
 
 export default function QrCardsPage() {
   const [profiles, setProfiles] = useState<CardProfile[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedProfile, setSelectedProfile] = useState<CardProfile | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -24,31 +26,14 @@ export default function QrCardsPage() {
   const [formWebsites, setFormWebsites] = useState<string[]>([""]);
   const [formImage, setFormImage] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const qrRef = useRef<HTMLCanvasElement>(null);
+  const { showToast } = useToast();
 
   useEffect(() => {
-    const saved = localStorage.getItem("card_profiles");
-    if (saved) {
-      const parsed: CardProfile[] = JSON.parse(saved);
-      // 기존 데이터 마이그레이션 (websites 필드 없는 경우)
-      const migrated = parsed.map((p) => ({ ...p, websites: p.websites ?? [] }));
-      setProfiles(migrated);
-    } else {
-      const initial: CardProfile[] = INITIAL_PROFILES.map((p, i) => ({
-        ...p,
-        id: String(i + 1),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }));
-      setProfiles(initial);
-      localStorage.setItem("card_profiles", JSON.stringify(initial));
-    }
+    fetchCardProfiles().then((data) => {
+      setProfiles(data);
+      setLoading(false);
+    });
   }, []);
-
-  function saveProfiles(updated: CardProfile[]) {
-    setProfiles(updated);
-    localStorage.setItem("card_profiles", JSON.stringify(updated));
-  }
 
   async function handleSelectProfile(profile: CardProfile) {
     setSelectedProfile(profile);
@@ -86,7 +71,7 @@ export default function QrCardsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 500 * 1024) {
-      alert("이미지는 500KB 이하만 가능합니다.");
+      showToast("이미지는 500KB 이하만 가능합니다.");
       return;
     }
     const reader = new FileReader();
@@ -94,25 +79,30 @@ export default function QrCardsPage() {
     reader.readAsDataURL(file);
   }
 
-  function handleAddProfile() {
+  async function handleAddProfile() {
     if (!formName || !formEmail || !formPhone) return;
     const websites = formWebsites.filter((w) => w.trim() !== "");
-    const newProfile: CardProfile = {
-      id: String(Date.now()),
-      user_id: "",
-      unique_id: generateUniqueId(formName),
-      name: formName,
-      email: formEmail,
-      phone: formPhone,
-      websites,
-      image: formImage || undefined,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    const updated = [newProfile, ...profiles];
-    saveProfiles(updated);
-    resetForm();
-    handleSelectProfile(newProfile);
+
+    // 현재 사용자 ID 가져오기
+    const { data: { user } } = await supabase.auth.getUser();
+
+    try {
+      const created = await createCardProfile({
+        user_id: user?.id ?? "",
+        unique_id: generateUniqueId(formName),
+        name: formName,
+        email: formEmail,
+        phone: formPhone,
+        websites,
+        image: formImage || undefined,
+      });
+      setProfiles((prev) => [created, ...prev]);
+      resetForm();
+      handleSelectProfile(created);
+      showToast("명함이 등록되었습니다", "success");
+    } catch {
+      showToast("명함 등록에 실패했습니다");
+    }
   }
 
   function resetForm() {
@@ -124,13 +114,18 @@ export default function QrCardsPage() {
     setShowForm(false);
   }
 
-  function handleDeleteProfile(id: string) {
+  async function handleDeleteProfile(id: string) {
     if (!confirm("이 명함을 삭제하시겠습니까?")) return;
-    const updated = profiles.filter((p) => p.id !== id);
-    saveProfiles(updated);
-    if (selectedProfile?.id === id) {
-      setSelectedProfile(null);
-      setQrDataUrl("");
+    try {
+      await deleteCardProfile(id);
+      setProfiles((prev) => prev.filter((p) => p.id !== id));
+      if (selectedProfile?.id === id) {
+        setSelectedProfile(null);
+        setQrDataUrl("");
+      }
+      showToast("명함이 삭제되었습니다", "success");
+    } catch {
+      showToast("명함 삭제에 실패했습니다");
     }
   }
 
@@ -286,68 +281,70 @@ export default function QrCardsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 명함 리스트 */}
         <div className="lg:col-span-2 space-y-3" data-testid="card-list">
-          {profiles.map((profile) => (
-            <div
-              key={profile.id}
-              className={`flex items-center justify-between rounded-lg border p-4 cursor-pointer transition-colors ${
-                selectedProfile?.id === profile.id
-                  ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950"
-                  : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
-              }`}
-              onClick={() => handleSelectProfile(profile)}
-              data-testid={`card-item-${profile.unique_id}`}
-            >
-              <div className="flex items-center gap-4">
-                {profile.image ? (
-                  <img src={profile.image} alt={profile.name} className="h-10 w-10 rounded-full object-cover shrink-0" />
-                ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 font-bold shrink-0 dark:bg-blue-900 dark:text-blue-300">
-                    {profile.name[0]}
-                  </div>
-                )}
-                <div>
-                  <p className="font-medium text-zinc-900 dark:text-zinc-50">{profile.name}</p>
-                  <p className="text-xs text-zinc-500">{profile.email} · {profile.phone}</p>
-                  {profile.websites?.length > 0 && (
-                    <p className="text-xs text-blue-500 flex items-center gap-1 mt-0.5">
-                      <Globe size={10} />
-                      {profile.websites.length}개 홈페이지
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDownloadVCard(profile); }}
-                  className="rounded p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
-                  title="vCard 다운로드"
-                >
-                  <Download size={16} />
-                </button>
-                <a
-                  href={`/u/${profile.unique_id}`}
-                  target="_blank"
-                  onClick={(e) => e.stopPropagation()}
-                  className="rounded p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
-                  title="명함 페이지 보기"
-                >
-                  <Eye size={16} />
-                </a>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteProfile(profile.id); }}
-                  className="rounded p-2 text-zinc-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
-                  title="삭제"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
-          ))}
-
-          {profiles.length === 0 && (
+          {loading ? (
+            <div className="text-center py-12 text-zinc-400 text-sm">로딩 중...</div>
+          ) : profiles.length === 0 ? (
             <div className="text-center py-12 text-zinc-400 text-sm">
               등록된 명함이 없습니다. 명함을 추가해주세요.
             </div>
+          ) : (
+            profiles.map((profile) => (
+              <div
+                key={profile.id}
+                className={`flex items-center justify-between rounded-lg border p-4 cursor-pointer transition-colors ${
+                  selectedProfile?.id === profile.id
+                    ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950"
+                    : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
+                }`}
+                onClick={() => handleSelectProfile(profile)}
+                data-testid={`card-item-${profile.unique_id}`}
+              >
+                <div className="flex items-center gap-4">
+                  {profile.image ? (
+                    <img src={profile.image} alt={profile.name} className="h-10 w-10 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 font-bold shrink-0 dark:bg-blue-900 dark:text-blue-300">
+                      {profile.name[0]}
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-medium text-zinc-900 dark:text-zinc-50">{profile.name}</p>
+                    <p className="text-xs text-zinc-500">{profile.email} · {profile.phone}</p>
+                    {profile.websites?.length > 0 && (
+                      <p className="text-xs text-blue-500 flex items-center gap-1 mt-0.5">
+                        <Globe size={10} />
+                        {profile.websites.length}개 홈페이지
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDownloadVCard(profile); }}
+                    className="rounded p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
+                    title="vCard 다운로드"
+                  >
+                    <Download size={16} />
+                  </button>
+                  <a
+                    href={`/u/${profile.unique_id}`}
+                    target="_blank"
+                    onClick={(e) => e.stopPropagation()}
+                    className="rounded p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
+                    title="명함 페이지 보기"
+                  >
+                    <Eye size={16} />
+                  </a>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteProfile(profile.id); }}
+                    className="rounded p-2 text-zinc-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+                    title="삭제"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))
           )}
         </div>
 
@@ -359,10 +356,10 @@ export default function QrCardsPage() {
           </h3>
           {selectedProfile && qrDataUrl ? (
             <div className="text-center space-y-4">
-              <img src={qrDataUrl} alt="QR Code" className="mx-auto rounded-lg" ref={qrRef as unknown as React.Ref<HTMLImageElement>} />
+              <img src={qrDataUrl} alt="QR Code" className="mx-auto rounded-lg" />
               <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{selectedProfile.name}</p>
               <p className="text-xs text-zinc-500 break-all">
-                {window.location.origin}/u/{selectedProfile.unique_id}
+                {typeof window !== "undefined" ? window.location.origin : ""}/u/{selectedProfile.unique_id}
               </p>
               <div className="flex gap-2 justify-center">
                 <button

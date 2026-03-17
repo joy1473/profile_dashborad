@@ -4,14 +4,7 @@ import { useState, useEffect, use } from "react";
 import { Download, Mail, Phone, Globe } from "lucide-react";
 import QRCode from "qrcode";
 import type { CardProfile } from "@/types/card-profile";
-import { generateVCard } from "@/lib/card-profiles";
-
-const DEFAULT_PROFILES: Record<string, CardProfile> = {
-  "eunah-jo": { id: "1", user_id: "", unique_id: "eunah-jo", name: "조은아", email: "joytec@naver.com", phone: "010-2648-6726", websites: [], created_at: "", updated_at: "" },
-  "taejun-park": { id: "2", user_id: "", unique_id: "taejun-park", name: "박태준", email: "eybbye@gmail.com", phone: "010-6261-0970", websites: [], created_at: "", updated_at: "" },
-  "insuk-shin": { id: "3", user_id: "", unique_id: "insuk-shin", name: "신인숙", email: "ppeanut@naver.com", phone: "010-8653-0836", websites: [], created_at: "", updated_at: "" },
-  "sangjin-hong": { id: "4", user_id: "", unique_id: "sangjin-hong", name: "홍상진", email: "sjhong76@gmail.com", phone: "010-6211-9683", websites: [], created_at: "", updated_at: "" },
-};
+import { generateVCard, fetchCardProfileByUniqueId } from "@/lib/card-profiles";
 
 export default function PublicProfilePage({ params }: { params: Promise<{ uniqueId: string }> }) {
   const { uniqueId } = use(params);
@@ -21,17 +14,7 @@ export default function PublicProfilePage({ params }: { params: Promise<{ unique
 
   useEffect(() => {
     async function load() {
-      const saved = localStorage.getItem("card_profiles");
-      let found: CardProfile | null = null;
-
-      if (saved) {
-        const profiles: CardProfile[] = JSON.parse(saved);
-        found = profiles.find((p) => p.unique_id === uniqueId) ?? null;
-      }
-      if (!found) {
-        found = DEFAULT_PROFILES[uniqueId] ?? null;
-      }
-
+      const found = await fetchCardProfileByUniqueId(uniqueId);
       setProfile(found);
 
       if (found) {
