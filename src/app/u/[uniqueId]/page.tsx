@@ -125,7 +125,7 @@ export default function PublicProfilePage({ params }: { params: Promise<{ unique
         </div>
 
         <p className="text-center text-xs text-zinc-400 mt-4">
-          SaaS Dashboard QR 명함
+          copyright&copy; 2005 The Polestar All rights reserved. | 사업자등록번호 : 110-11-23776 | 대표자 : 조은아 | joytec@naver.com
         </p>
       </div>
     </div>
