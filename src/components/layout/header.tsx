@@ -1,17 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Search, Bell, Sun, Moon, Monitor, LogOut } from "lucide-react";
+import { Search, Bell, Sun, Moon, Monitor, LogOut, Download } from "lucide-react";
 import { useDashboardStore } from "@/store/dashboard-store";
 import { useTheme } from "@/components/layout/theme-provider";
 import { supabase } from "@/lib/supabase";
 import { getDisplayName, getAvatarUrl, signOut } from "@/lib/auth";
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
 
 export function Header() {
   const { searchQuery, setSearchQuery } = useDashboardStore();
   const { mode, setMode } = useTheme();
   const [displayName, setDisplayName] = useState("사용자");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -20,6 +26,13 @@ export function Header() {
         setAvatarUrl(getAvatarUrl(user));
       }
     });
+
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
   return (
@@ -36,6 +49,20 @@ export function Header() {
         />
       </div>
       <div className="flex items-center gap-4">
+        {installPrompt && (
+          <button
+            onClick={async () => {
+              await installPrompt.prompt();
+              const { outcome } = await installPrompt.userChoice;
+              if (outcome === "accepted") setInstallPrompt(null);
+            }}
+            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+            title="앱 설치"
+          >
+            <Download size={14} />
+            앱 설치
+          </button>
+        )}
         <button
           onClick={() => {
             const next = mode === "light" ? "dark" : mode === "dark" ? "system" : "light";
