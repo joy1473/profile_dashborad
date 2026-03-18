@@ -35,9 +35,6 @@ export default function LoginPage() {
             카카오 로그인
           </button>
         </div>
-        <p className="text-center text-xs text-zinc-400 dark:text-zinc-600 mt-6">
-          copyright&copy; 2005 The Polestar All rights reserved. | 사업자등록번호 : 110-11-23776 | 대표자 : 조은아 | joytec@naver.com
-        </p>
       </div>
     </div>
   );

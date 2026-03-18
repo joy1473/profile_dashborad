@@ -33,7 +33,7 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 h-full w-64 border-r border-zinc-200 bg-white transition-transform dark:border-zinc-800 dark:bg-zinc-950",
+          "fixed left-0 top-0 z-40 h-full w-64 flex flex-col border-r border-zinc-200 bg-white transition-transform dark:border-zinc-800 dark:bg-zinc-950",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
           "lg:translate-x-0"
         )}
@@ -43,7 +43,7 @@ export function Sidebar() {
           <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">SaaS Dashboard</h1>
         </div>
 
-        <nav className="mt-6 px-3" data-testid="sidebar-nav">
+        <nav className="mt-6 px-3 flex-1" data-testid="sidebar-nav">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
@@ -64,6 +64,13 @@ export function Sidebar() {
             );
           })}
         </nav>
+
+        <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-800 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-600">
+          <p>copyright&copy; 2005 The Polestar</p>
+          <p>사업자등록번호 : 110-11-23776</p>
+          <p>대표자 : 조은아 | joytec@naver.com</p>
+          <p>서울특별시 강서구 양천로 500, 8층 810호</p>
+        </div>
       </aside>
     </>
   );

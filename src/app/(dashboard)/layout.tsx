@@ -47,9 +47,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <main className="p-6" data-testid="main-content">
             {children}
           </main>
-          <footer className="px-6 py-3 text-center text-xs text-zinc-400 dark:text-zinc-600 border-t border-zinc-200 dark:border-zinc-800">
-            copyright&copy; 2005 The Polestar All rights reserved. &nbsp;|&nbsp; 사업자등록번호 : 110-11-23776 &nbsp;|&nbsp; 대표자 : 조은아 &nbsp;|&nbsp; 서울특별시 강서구 양천로 500, 8층 810호(등촌동, 노블리움오피스텔) &nbsp;|&nbsp; joytec@naver.com
-          </footer>
         </div>
       </div>
     </ToastProvider>
