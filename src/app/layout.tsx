@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Polestar",
+    title: "A Team",
   },
   icons: {
     icon: "/icons/icon-192x192.png",

@@ -1,6 +1,6 @@
 {
-  "name": "The Polestar Dashboard",
-  "short_name": "Polestar",
+  "name": "A Team",
+  "short_name": "A Team",
   "description": "데이터 시각화 및 관리 대시보드",
   "start_url": "/dashboard",
   "display": "standalone",
