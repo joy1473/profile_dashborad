@@ -1,0 +1,17 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" width="320" height="320" style="display:block;margin:0 auto;border-radius:112px;overflow:hidden">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e40af"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="512" height="512" fill="url(#bg)" style="stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- Large bold "A" centered -->
+  <text x="256" y="295" text-anchor="middle" dominant-baseline="auto" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-weight="900" font-size="260" fill="white" letter-spacing="-4" style="fill:rgb(255, 255, 255);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Arial Black&quot;, &quot;Helvetica Neue&quot;, Arial, sans-serif;font-size:260px;font-weight:900;text-anchor:middle;dominant-baseline:auto">A</text>
+
+  <!-- "TEAM" label below -->
+  <text x="256" y="400" text-anchor="middle" dominant-baseline="auto" font-family="'Arial', 'Helvetica Neue', Arial, sans-serif" font-weight="600" font-size="72" fill="white" letter-spacing="18" style="fill:rgb(255, 255, 255);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:Arial, &quot;Helvetica Neue&quot;, Arial, sans-serif;font-size:72px;font-weight:600;text-anchor:middle;dominant-baseline:auto">TEAM</text>
+</svg>
