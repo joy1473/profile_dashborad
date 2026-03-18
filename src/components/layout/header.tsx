@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Search, Bell, Sun, Moon, Monitor, LogOut, Download } from "lucide-react";
+import { Search, Bell, Sun, Moon, Monitor, LogOut, Download, Share, X } from "lucide-react";
 import { useDashboardStore } from "@/store/dashboard-store";
 import { useTheme } from "@/components/layout/theme-provider";
 import { supabase } from "@/lib/supabase";
@@ -12,12 +12,23 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+function isIOS() {
+  if (typeof navigator === "undefined") return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.userAgent.includes("Mac") && "ontouchend" in document);
+}
+
+function isStandalone() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(display-mode: standalone)").matches || ("standalone" in navigator && (navigator as Record<string, unknown>).standalone === true);
+}
+
 export function Header() {
   const { searchQuery, setSearchQuery } = useDashboardStore();
   const { mode, setMode } = useTheme();
   const [displayName, setDisplayName] = useState("사용자");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showIOSGuide, setShowIOSGuide] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -32,10 +43,17 @@ export function Header() {
       setInstallPrompt(e as BeforeInstallPromptEvent);
     };
     window.addEventListener("beforeinstallprompt", handler);
+
+    // iOS: show install guide if not already installed and not dismissed
+    if (isIOS() && !isStandalone() && !sessionStorage.getItem("ios-pwa-dismissed")) {
+      setShowIOSGuide(true);
+    }
+
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
   return (
+    <>
     <header className="flex h-16 items-center justify-between border-b border-zinc-200 px-6 dark:border-zinc-800" data-testid="header">
       <div className="relative w-72">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
@@ -97,5 +115,28 @@ export function Header() {
         </button>
       </div>
     </header>
+
+    {showIOSGuide && (
+      <div className="flex items-center justify-between gap-3 border-b border-blue-200 bg-blue-50 px-6 py-3 dark:border-blue-900 dark:bg-blue-950">
+        <div className="flex items-center gap-3 text-sm text-blue-800 dark:text-blue-200">
+          <Share size={18} className="shrink-0" />
+          <span>
+            홈 화면에 추가하려면 Safari 하단의{" "}
+            <strong>공유 버튼(⎙)</strong> →{" "}
+            <strong>&quot;홈 화면에 추가&quot;</strong>를 눌러주세요
+          </span>
+        </div>
+        <button
+          onClick={() => {
+            setShowIOSGuide(false);
+            sessionStorage.setItem("ios-pwa-dismissed", "1");
+          }}
+          className="shrink-0 rounded p-1 text-blue-600 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900"
+        >
+          <X size={16} />
+        </button>
+      </div>
+    )}
+    </>
   );
 }
