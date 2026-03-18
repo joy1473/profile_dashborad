@@ -17,6 +17,21 @@
 | analytics-report-builder | Complete | 97% | 2026-03-17 | 4 |
 | bid-document-builder | Complete | 95% | 2026-03-17 | 4 |
 | login-logging | Complete | 93% | 2026-03-17 | 4 |
+| bid-document-automation | Complete | 98.8% | 2026-03-18 | 4 |
+
+## bid-document-automation
+
+- **Duration**: 2026-03-18 (1 session)
+- **Match Rate**: 86% → 98.8% (1 iteration)
+- **Files**: 5 new Python scripts (~450 lines) — external to saas-dashboard
+- **Location**: `C:\Users\joyte\Documents\더폴스타\입찰\scripts\`
+- **Dependencies**: openpyxl, zipfile, xml.etree.ElementTree (all stdlib/pre-installed)
+- **Key Feature**: 입찰 문서 3종 자동 생성 (XLSX 사업비표, HWPX 수행계획서, MD 별지서식 가이드)
+- **Documents**:
+  - [bid-document-automation.plan.md](bid-document-automation/bid-document-automation.plan.md)
+  - [bid-document-automation.design.md](bid-document-automation/bid-document-automation.design.md)
+  - [bid-document-automation.analysis.md](bid-document-automation/bid-document-automation.analysis.md)
+  - [bid-document-automation.report.md](bid-document-automation/bid-document-automation.report.md)
 
 ## login-logging
 

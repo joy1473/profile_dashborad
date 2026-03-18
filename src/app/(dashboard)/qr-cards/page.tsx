@@ -37,9 +37,9 @@ export default function QrCardsPage() {
 
   async function handleSelectProfile(profile: CardProfile) {
     setSelectedProfile(profile);
-    const url = `${window.location.origin}/u/${profile.unique_id}`;
+    const vcard = generateVCard(profile);
     try {
-      const dataUrl = await QRCode.toDataURL(url, {
+      const dataUrl = await QRCode.toDataURL(vcard, {
         width: 280, margin: 2, color: { dark: "#1e40af", light: "#ffffff" },
       });
       setQrDataUrl(dataUrl);
@@ -358,6 +358,7 @@ export default function QrCardsPage() {
             <div className="text-center space-y-4">
               <img src={qrDataUrl} alt="QR Code" className="mx-auto rounded-lg" />
               <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{selectedProfile.name}</p>
+              <p className="text-xs text-zinc-400">QR 스캔 → 연락처 자동 저장</p>
               <p className="text-xs text-zinc-500 break-all">
                 {typeof window !== "undefined" ? window.location.origin : ""}/u/{selectedProfile.unique_id}
               </p>
