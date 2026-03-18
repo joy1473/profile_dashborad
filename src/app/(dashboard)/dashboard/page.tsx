@@ -6,6 +6,7 @@ import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { CategoryChart } from "@/components/charts/category-chart";
 import { AnalyticsToolbar } from "@/components/charts/analytics-toolbar";
 import { ChartRenderer } from "@/components/charts/chart-renderer";
+import { UserPresence } from "@/components/dashboard/user-presence";
 import { fetchMetrics } from "@/lib/metrics";
 import { fetchRevenueData } from "@/lib/metrics";
 import { fetchActivities } from "@/lib/activities";
@@ -103,22 +104,27 @@ export default function DashboardPage() {
         <CategoryChart />
       </div>
 
-      <Card data-testid="activity-feed">
-        <h3 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">최근 활동</h3>
-        <div className="space-y-4">
-          {activitiesData.map((activity) => (
-            <div key={activity.id} className="flex items-center justify-between border-b border-zinc-100 pb-3 last:border-0 dark:border-zinc-800">
-              <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{activity.user}</p>
-                <p className="text-sm text-zinc-500">
-                  {activity.action} — <span className="text-zinc-700 dark:text-zinc-300">{activity.target}</span>
-                </p>
-              </div>
-              <span className="text-xs text-zinc-400">{activity.timestamp}</span>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <Card data-testid="activity-feed">
+            <h3 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">최근 활동</h3>
+            <div className="space-y-4">
+              {activitiesData.map((activity) => (
+                <div key={activity.id} className="flex items-center justify-between border-b border-zinc-100 pb-3 last:border-0 dark:border-zinc-800">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{activity.user}</p>
+                    <p className="text-sm text-zinc-500">
+                      {activity.action} — <span className="text-zinc-700 dark:text-zinc-300">{activity.target}</span>
+                    </p>
+                  </div>
+                  <span className="text-xs text-zinc-400">{activity.timestamp}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          </Card>
         </div>
-      </Card>
+        <UserPresence />
+      </div>
     </div>
   );
 }

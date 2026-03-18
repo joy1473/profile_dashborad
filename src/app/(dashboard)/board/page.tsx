@@ -15,6 +15,7 @@ import { fetchSubtaskCounts } from "@/lib/subtasks";
 import { fetchLinkCounts } from "@/lib/links";
 import { supabase } from "@/lib/supabase";
 import { MyTasks } from "@/components/board/my-tasks";
+import { CalendarBoard } from "@/components/board/calendar-board";
 import { BoardSkeleton } from "@/components/skeletons/board-skeleton";
 import { cn } from "@/lib/utils";
 import type { Issue, IssueStatus, IssuePriority, CreateIssueInput } from "@/types/issue";
@@ -30,7 +31,7 @@ export default function BoardPage() {
   const { showToast } = useToast();
 
   // Tab & subtask state
-  const [activeTab, setActiveTab] = useState<"board" | "my-tasks">("board");
+  const [activeTab, setActiveTab] = useState<"board" | "calendar" | "my-tasks">("board");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [subtaskCounts, setSubtaskCounts] = useState<Map<string, SubtaskCount>>(new Map());
   const [linkCounts, setLinkCounts] = useState<Map<string, number>>(new Map());
@@ -223,28 +224,20 @@ export default function BoardPage() {
             보드
           </h2>
           <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
-            <button
-              onClick={() => setActiveTab("board")}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium",
-                activeTab === "board"
-                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
-                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"
-              )}
-            >
-              전체 보드
-            </button>
-            <button
-              onClick={() => setActiveTab("my-tasks")}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium",
-                activeTab === "my-tasks"
-                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
-                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"
-              )}
-            >
-              내 할일
-            </button>
+            {(["board", "calendar", "my-tasks"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-sm font-medium",
+                  activeTab === tab
+                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
+                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"
+                )}
+              >
+                {tab === "board" ? "전체 보드" : tab === "calendar" ? "캘린더" : "내 할일"}
+              </button>
+            ))}
           </div>
         </div>
         <button
@@ -286,6 +279,8 @@ export default function BoardPage() {
             linkCounts={linkCounts}
           />
         </>
+      ) : activeTab === "calendar" ? (
+        <CalendarBoard issues={filteredIssues} onIssueClick={handleCardClick} />
       ) : (
         currentUserId ? (
           <MyTasks
