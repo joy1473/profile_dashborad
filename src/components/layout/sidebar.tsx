@@ -8,7 +8,7 @@ import { useDashboardStore } from "@/store/dashboard-store";
 
 const navItems = [
   { href: "/dashboard", label: "대시보드", icon: LayoutDashboard },
-  { href: "/analytics", label: "분석", icon: BarChart3 },
+  { href: "/analytics", label: "입찰문서", icon: BarChart3 },
   { href: "/users", label: "사용자", icon: Users },
   { href: "/qr-cards", label: "QR 명함", icon: QrCode },
   { href: "/board", label: "보드", icon: Columns3 },
@@ -66,10 +66,10 @@ export function Sidebar() {
         </nav>
 
         <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-800 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-600">
-          <p>copyright&copy; 2005 The Polestar</p>
-          <p>사업자등록번호 : 110-11-23776</p>
-          <p>대표자 : 조은아 | joytec@naver.com</p>
-          <p>서울특별시 강서구 양천로 500, 8층 810호</p>
+          <p>copyright&copy; 2005 {process.env.NEXT_PUBLIC_COMPANY_NAME ?? "The Polestar"}</p>
+          <p>사업자등록번호 : {process.env.NEXT_PUBLIC_BIZ_REG_NO ?? ""}</p>
+          <p>대표자 : {process.env.NEXT_PUBLIC_REPRESENTATIVE ?? ""}</p>
+          <p>{process.env.NEXT_PUBLIC_ADDRESS ?? ""}</p>
         </div>
       </aside>
     </>

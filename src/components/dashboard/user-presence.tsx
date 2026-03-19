@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { Users, Circle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { formatRelativeTime } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 
-interface UserPresence {
+interface PresenceInfo {
   id: string;
   name: string;
   avatar?: string;
@@ -14,7 +15,7 @@ interface UserPresence {
 }
 
 export function UserPresence() {
-  const [users, setUsers] = useState<UserPresence[]>([]);
+  const [users, setUsers] = useState<PresenceInfo[]>([]);
 
   useEffect(() => {
     loadUsers();
@@ -58,7 +59,7 @@ export function UserPresence() {
             id: p.id,
             name: p.name ?? "사용자",
             avatar: p.avatar_url ?? undefined,
-            lastSeen: lastActivity ? formatTime(lastActivity) : "-",
+            lastSeen: lastActivity ? formatRelativeTime(lastActivity) : "-",
             online: diff < 5 * 60 * 1000, // 5분 이내 활동 → 온라인
           };
         })
@@ -117,18 +118,8 @@ export function UserPresence() {
   );
 }
 
-function formatTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return "방금 전";
-  if (min < 60) return `${min}분 전`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}시간 전`;
-  const d = Math.floor(hr / 24);
-  return `${d}일 전`;
-}
 
-const mockPresence: UserPresence[] = [
+const mockPresence: PresenceInfo[] = [
   { id: "1", name: "조은아", online: true, lastSeen: "접속 중" },
   { id: "2", name: "신인숙", online: true, lastSeen: "접속 중" },
   { id: "3", name: "김민수", online: false, lastSeen: "2시간 전" },

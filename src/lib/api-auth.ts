@@ -37,10 +37,10 @@ export function withAuth(handler: AuthenticatedHandler) {
     const supabase = createServerSupabase(request);
 
     if (!supabase) {
-      return handler(request, {
-        session: null as unknown as AuthContext["session"],
-        user: null as unknown as AuthContext["user"],
-      });
+      return NextResponse.json(
+        { error: "Server not configured" },
+        { status: 503 }
+      );
     }
 
     const {

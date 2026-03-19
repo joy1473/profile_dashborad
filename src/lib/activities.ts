@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { activities as mockActivities } from "./mock-data";
+import { formatRelativeTime } from "./utils";
 import type { Activity } from "@/types";
 
 const USE_MOCK = !process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -43,13 +44,3 @@ export async function logActivity(
   });
 }
 
-function formatRelativeTime(isoString: string): string {
-  const diff = Date.now() - new Date(isoString).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "방금 전";
-  if (minutes < 60) return `${minutes}분 전`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}시간 전`;
-  const days = Math.floor(hours / 24);
-  return `${days}일 전`;
-}

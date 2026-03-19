@@ -75,7 +75,7 @@ export function Header() {
               if (outcome === "accepted") setInstallPrompt(null);
             }}
             className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
-            title="앱 설치"
+            aria-label="앱 설치"
           >
             <Download size={14} />
             앱 설치
@@ -88,13 +88,13 @@ export function Header() {
           }}
           className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
           data-testid="theme-toggle"
-          title={mode === "light" ? "라이트 모드" : mode === "dark" ? "다크 모드" : "시스템 모드"}
+          aria-label={mode === "light" ? "라이트 모드" : mode === "dark" ? "다크 모드" : "시스템 모드"}
         >
           {mode === "light" && <Sun size={18} />}
           {mode === "dark" && <Moon size={18} />}
           {mode === "system" && <Monitor size={18} />}
         </button>
-        <button className="relative rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" data-testid="notifications-btn">
+        <button className="relative rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" data-testid="notifications-btn" aria-label="알림">
           <Bell size={18} />
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
         </button>
@@ -109,7 +109,7 @@ export function Header() {
         <button
           onClick={signOut}
           className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-          title="로그아웃"
+          aria-label="로그아웃"
         >
           <LogOut size={18} />
         </button>
@@ -132,6 +132,7 @@ export function Header() {
             sessionStorage.setItem("ios-pwa-dismissed", "1");
           }}
           className="shrink-0 rounded p-1 text-blue-600 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900"
+          aria-label="iOS 설치 안내 닫기"
         >
           <X size={16} />
         </button>

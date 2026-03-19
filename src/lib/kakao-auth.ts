@@ -40,8 +40,8 @@ export async function handleKakaoCallback(): Promise<boolean> {
 
   if (!code) return false;
 
-  // CSRF 검증 — localStorage 사용, state 없으면 경고만 (호환성)
-  if (savedState && state !== savedState) {
+  // CSRF 검증 — savedState 없으면 거부
+  if (!savedState || state !== savedState) {
     throw new Error("CSRF 검증 실패: 다른 탭에서 로그인을 시도했거나 세션이 만료되었습니다.");
   }
   localStorage.removeItem("kakao_oauth_state");

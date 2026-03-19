@@ -140,12 +140,15 @@ export async function fetchMySubtasks(userId: string): Promise<MySubtask[]> {
     .order("created_at", { ascending: false });
 
   if (error) return [];
-  return (data ?? []).map((row) => ({
-    ...row,
-    issue_title: (row.issues as any).title,
-    issue_status: (row.issues as any).status,
-    issue_labels: (row.issues as any).labels ?? [],
-  }));
+  return (data ?? []).map((row) => {
+    const issue = row.issues as { title: string; status: string; labels: string[] } | null;
+    return {
+      ...row,
+      issue_title: issue?.title ?? "",
+      issue_status: issue?.status ?? "todo",
+      issue_labels: issue?.labels ?? [],
+    };
+  });
 }
 
 export async function fetchSubtaskCounts(issueIds: string[]): Promise<Map<string, SubtaskCount>> {

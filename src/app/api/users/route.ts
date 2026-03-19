@@ -1,9 +1,18 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { withAuth } from "@/lib/api-auth";
-import { supabase } from "@/lib/supabase";
 
 const VALID_ROLES = ["admin", "user", "viewer"];
 const VALID_STATUSES = ["active", "inactive"];
+
+function createServiceSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return null;
+  return createClient(url, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
 export const PATCH = withAuth(async (request, { user }) => {
   const body = await request.json();
@@ -21,30 +30,17 @@ export const PATCH = withAuth(async (request, { user }) => {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
-  const isSelf = user?.id === userId;
-
-  // role/status 변경은 admin만 가능
-  if (role || status) {
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const { data: currentProfile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (currentProfile?.role !== "admin") {
-      return NextResponse.json({ error: "권한이 없습니다" }, { status: 403 });
-    }
+  const serviceSupabase = createServiceSupabase();
+  if (!serviceSupabase) {
+    return NextResponse.json({ error: "Server not configured" }, { status: 503 });
   }
 
-  // name 변경은 본인 또는 admin
-  if (name && !isSelf) {
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const { data: currentProfile } = await supabase
+  const isSelf = user.id === userId;
+  const needsAdmin = !!(role || status || (name && !isSelf));
+
+  // admin 권한 확인 (한 번만)
+  if (needsAdmin) {
+    const { data: currentProfile } = await serviceSupabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
@@ -65,7 +61,7 @@ export const PATCH = withAuth(async (request, { user }) => {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await serviceSupabase
     .from("profiles")
     .update(updates)
     .eq("id", userId)
@@ -73,7 +69,7 @@ export const PATCH = withAuth(async (request, { user }) => {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "업데이트에 실패했습니다" }, { status: 500 });
   }
 
   return NextResponse.json(data);

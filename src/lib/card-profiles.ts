@@ -20,7 +20,7 @@ export function generateVCard(profile: CardProfile): string {
 
 export function generateUniqueId(name: string): string {
   const base = name.replace(/\s+/g, "").toLowerCase();
-  const rand = Math.random().toString(36).substring(2, 6);
+  const rand = crypto.randomUUID().substring(0, 8);
   return `${base}-${rand}`;
 }
 

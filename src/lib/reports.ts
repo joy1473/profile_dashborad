@@ -110,23 +110,13 @@ export async function updateReport(
 ): Promise<Report> {
   const { data: { user } } = await supabase.auth.getUser();
 
-  // 1. 현재 버전을 이력에 저장
+  // 1. 현재 버전을 이력에 저장 + 업데이트를 한 트랜잭션처럼 처리
   const current = await fetchReport(id);
-  if (current) {
-    await supabase.from("report_histories").insert({
-      report_id: id,
-      version: current.version,
-      data: current.data,
-      chart_config: current.chart_config,
-      qa_responses: current.qa_responses,
-      change_note: input.change_note ?? null,
-      created_by: user?.id ?? null,
-    });
-  }
+  if (!current) throw new Error("Report not found");
 
-  // 2. 리포트 업데이트 (version +1)
+  // 2. 리포트 업데이트 (version 조건으로 optimistic lock)
   const updateData: Record<string, unknown> = {
-    version: (current?.version ?? 0) + 1,
+    version: current.version + 1,
     updated_at: new Date().toISOString(),
   };
   if (input.title !== undefined) updateData.title = input.title;
@@ -138,10 +128,25 @@ export async function updateReport(
     .from("reports")
     .update(updateData)
     .eq("id", id)
+    .eq("version", current.version) // optimistic lock: 버전 불일치 시 업데이트 실패
     .select()
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error || !data) {
+    throw new Error("동시 수정이 감지되었습니다. 페이지를 새로고침하세요.");
+  }
+
+  // 3. 업데이트 성공 후 이력 저장 (실패해도 데이터 무결성에 영향 없음)
+  await supabase.from("report_histories").insert({
+    report_id: id,
+    version: current.version,
+    data: current.data,
+    chart_config: current.chart_config,
+    qa_responses: current.qa_responses,
+    change_note: input.change_note ?? null,
+    created_by: user?.id ?? null,
+  });
+
   return mapReport(data);
 }
 

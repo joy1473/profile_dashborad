@@ -2,9 +2,44 @@
 
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
+import { supabase } from "@/lib/supabase";
 
 export default function SettingsPage() {
   const [notifications, setNotifications] = useState({ email: true, push: false, weekly: true });
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+
+  async function handleSaveProfile() {
+    setSaving(true);
+    setSaveMessage("");
+    try {
+      const nameInput = document.querySelector<HTMLInputElement>('[data-testid="profile-name"]');
+      if (!nameInput?.value) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setSaveMessage("로그인이 필요합니다");
+        return;
+      }
+
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, name: nameInput.value }),
+      });
+
+      if (!res.ok) {
+        setSaveMessage("저장에 실패했습니다");
+        return;
+      }
+      setSaveMessage("저장되었습니다");
+      setTimeout(() => setSaveMessage(""), 3000);
+    } catch {
+      setSaveMessage("저장에 실패했습니다");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div>
@@ -33,9 +68,21 @@ export default function SettingsPage() {
               />
             </div>
           </div>
-          <button className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200" data-testid="save-profile">
-            저장
-          </button>
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              onClick={handleSaveProfile}
+              disabled={saving}
+              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              data-testid="save-profile"
+            >
+              {saving ? "저장 중..." : "저장"}
+            </button>
+            {saveMessage && (
+              <span className={`text-sm ${saveMessage.includes("실패") || saveMessage.includes("필요") ? "text-red-500" : "text-green-600"}`}>
+                {saveMessage}
+              </span>
+            )}
+          </div>
         </Card>
 
         <Card data-testid="notifications-section">

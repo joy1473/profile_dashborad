@@ -8,11 +8,17 @@ const USE_MOCK = !process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 // ---------- Mock helpers (fallback when Supabase is not configured) ----------
 
-let localIssues = [...mockIssues];
-let nextId = 100;
+const mockStore = {
+  issues: [...mockIssues],
+  nextId: 100,
+  reset() {
+    this.issues = [...mockIssues];
+    this.nextId = 100;
+  },
+};
 
 function mockFetch(): Issue[] {
-  return localIssues.sort((a, b) => {
+  return [...mockStore.issues].sort((a, b) => {
     if (a.status !== b.status) return a.status.localeCompare(b.status);
     return a.position - b.position;
   });
@@ -36,9 +42,9 @@ export async function createIssue(input: CreateIssueInput): Promise<Issue> {
   if (USE_MOCK) {
     const now = new Date().toISOString();
     const status = input.status ?? "todo";
-    const position = localIssues.filter((i) => i.status === status).length;
+    const position = mockStore.issues.filter((i) => i.status === status).length;
     const issue: Issue = {
-      id: String(nextId++),
+      id: String(mockStore.nextId++),
       title: input.title,
       description: input.description ?? "",
       status,
@@ -52,7 +58,7 @@ export async function createIssue(input: CreateIssueInput): Promise<Issue> {
       created_at: now,
       updated_at: now,
     };
-    localIssues.push(issue);
+    mockStore.issues.push(issue);
     return issue;
   }
 
@@ -87,10 +93,10 @@ export async function createIssue(input: CreateIssueInput): Promise<Issue> {
 
 export async function updateIssue(id: string, input: UpdateIssueInput): Promise<Issue> {
   if (USE_MOCK) {
-    const idx = localIssues.findIndex((i) => i.id === id);
+    const idx = mockStore.issues.findIndex((i) => i.id === id);
     if (idx === -1) throw new Error("Issue not found");
-    localIssues[idx] = { ...localIssues[idx], ...input, updated_at: new Date().toISOString() };
-    return localIssues[idx];
+    mockStore.issues[idx] = { ...mockStore.issues[idx], ...input, updated_at: new Date().toISOString() };
+    return mockStore.issues[idx];
   }
 
   const { data, error } = await supabase
@@ -109,7 +115,7 @@ export async function updateIssue(id: string, input: UpdateIssueInput): Promise<
 
 export async function deleteIssue(id: string): Promise<void> {
   if (USE_MOCK) {
-    localIssues = localIssues.filter((i) => i.id !== id);
+    mockStore.issues = mockStore.issues.filter((i) => i.id !== id);
     return;
   }
 
@@ -127,16 +133,20 @@ export async function moveIssue(id: string, status: IssueStatus, position: numbe
 export async function reorderIssues(updates: { id: string; position: number }[]): Promise<void> {
   if (USE_MOCK) {
     for (const u of updates) {
-      const idx = localIssues.findIndex((i) => i.id === u.id);
-      if (idx !== -1) localIssues[idx].position = u.position;
+      const idx = mockStore.issues.findIndex((i) => i.id === u.id);
+      if (idx !== -1) mockStore.issues[idx].position = u.position;
     }
     return;
   }
 
-  // Batch update positions using Promise.all
-  await Promise.all(
-    updates.map(({ id, position }) =>
-      supabase.from("issues").update({ position }).eq("id", id)
-    )
-  );
+  // Batch update positions in chunks of 10
+  const CHUNK_SIZE = 10;
+  for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+    const chunk = updates.slice(i, i + CHUNK_SIZE);
+    await Promise.all(
+      chunk.map(({ id, position }) =>
+        supabase.from("issues").update({ position }).eq("id", id)
+      )
+    );
+  }
 }
