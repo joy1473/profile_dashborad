@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useEffect, useState } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { useBidAnalyzerStore } from '@/store/bid-analyzer-store';
 import type { TextSelection, DocumentPosition } from '@/types/bid-analyzer';
 import { v4 as uuid } from 'uuid';
@@ -9,129 +9,120 @@ export function DocumentViewer() {
   const { documentModel, editMode, setPendingSelection, isParsingDocument } = useBidAnalyzerStore();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef<HTMLElement | null>(null);
 
-  // HTML이 변경될 때 contentRef에 직접 삽입
+  // HTML 삽입
   useEffect(() => {
     if (contentRef.current && documentModel?.renderedHtml) {
       contentRef.current.innerHTML = documentModel.renderedHtml;
     }
   }, [documentModel?.renderedHtml]);
 
-  // 단일 요소에서 선택 생성
-  const createSelection = useCallback((el: HTMLElement): TextSelection | null => {
-    if (!documentModel) return null;
-    const posId = el.getAttribute('data-pos-id');
-    if (!posId) return null;
-    const position = documentModel.positionMap.get(posId);
-    if (!position) return null;
-    return {
-      id: uuid(),
-      text: el.textContent?.trim() || '(빈 셀)',
-      position,
-    };
-  }, [documentModel]);
-
-  // 드래그 범위 내 모든 요소 수집
-  const collectDragRange = useCallback((startEl: HTMLElement, endEl: HTMLElement): TextSelection | null => {
-    if (!documentModel || !contentRef.current) return null;
-    const allSpans = Array.from(contentRef.current.querySelectorAll('[data-pos-id]'));
-    const startIdx = allSpans.indexOf(startEl);
-    const endIdx = allSpans.indexOf(endEl);
-    if (startIdx === -1 || endIdx === -1) return null;
-
-    const fromIdx = Math.min(startIdx, endIdx);
-    const toIdx = Math.max(startIdx, endIdx);
-    const selected = allSpans.slice(fromIdx, toIdx + 1);
-
-    // 이전 drag-selected 해제
-    contentRef.current.querySelectorAll('.drag-selected').forEach((el) => el.classList.remove('drag-selected'));
-
-    const texts: string[] = [];
-    for (const span of selected) {
-      span.classList.add('drag-selected');
-      texts.push(span.textContent || '');
-    }
-
-    const firstPosId = selected[0].getAttribute('data-pos-id');
-    if (!firstPosId) return null;
-    const position = documentModel.positionMap.get(firstPosId);
-    if (!position) return null;
-
-    const lastPosId = selected[selected.length - 1].getAttribute('data-pos-id');
-    const rangePosition: DocumentPosition = {
-      ...position,
-      charLength: texts.join('').length,
-      domElementId: `${firstPosId}~${lastPosId || firstPosId}`,
-    };
-
-    return {
-      id: uuid(),
-      text: texts.join('').trim() || '(빈 영역)',
-      position: rangePosition,
-    };
-  }, [documentModel]);
-
-  // 네이티브 이벤트 핸들러 — React synthetic event 대신 직접 addEventListener
+  // 브라우저 기본 텍스트 선택(Selection API) 기반
   useEffect(() => {
     const content = contentRef.current;
     if (!content) return;
 
-    const findTarget = (e: MouseEvent): HTMLElement | null => {
-      return (e.target as HTMLElement).closest('[data-pos-id]') as HTMLElement | null;
-    };
-
-    const onMouseDown = (e: MouseEvent) => {
-      if (!editMode) return;
-      const target = findTarget(e);
-      if (!target) return;
-      e.preventDefault(); // 텍스트 선택 방지
-      dragStartRef.current = target;
-    };
-
-    const clearAllSelections = () => {
+    const clearHighlights = () => {
       content.querySelectorAll('.selected').forEach((el) => el.classList.remove('selected'));
       content.querySelectorAll('.drag-selected').forEach((el) => el.classList.remove('drag-selected'));
     };
 
-    const onMouseUp = (e: MouseEvent) => {
-      if (!editMode || !dragStartRef.current) return;
+    const onMouseUp = () => {
+      if (!editMode) return;
 
-      const target = findTarget(e);
-      if (!target) {
-        dragStartRef.current = null;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) {
+        // 클릭만 한 경우 — 클릭한 요소가 data-pos-id를 가지고 있으면 단일 선택
         return;
       }
 
-      // 이전 선택 전체 해제 (selected + drag-selected)
-      clearAllSelections();
+      const range = sel.getRangeAt(0);
+      if (!content.contains(range.commonAncestorContainer)) return;
 
-      let selection: TextSelection | null = null;
+      // 선택 범위 내의 모든 [data-pos-id] 요소 수집
+      const allSpans = Array.from(content.querySelectorAll('[data-pos-id]'));
+      const selectedSpans: HTMLElement[] = [];
 
-      if (dragStartRef.current === target) {
-        // 클릭 (같은 요소)
-        target.classList.add('selected');
-        selection = createSelection(target);
-      } else {
-        // 드래그 범위
-        selection = collectDragRange(dragStartRef.current, target);
+      for (const span of allSpans) {
+        if (sel.containsNode(span, true)) {
+          selectedSpans.push(span as HTMLElement);
+        }
       }
 
-      dragStartRef.current = null;
+      if (selectedSpans.length === 0) return;
 
-      if (selection) {
-        setPendingSelection(selection);
+      // 이전 하이라이트 해제
+      clearHighlights();
+
+      // 선택된 요소들 하이라이트
+      const texts: string[] = [];
+      for (const span of selectedSpans) {
+        span.classList.add('drag-selected');
+        texts.push(span.textContent || '');
       }
+
+      // Position 생성
+      const firstPosId = selectedSpans[0].getAttribute('data-pos-id');
+      const lastPosId = selectedSpans[selectedSpans.length - 1].getAttribute('data-pos-id');
+      if (!firstPosId || !documentModel) return;
+
+      const position = documentModel.positionMap.get(firstPosId);
+      if (!position) return;
+
+      const rangePosition: DocumentPosition = {
+        ...position,
+        charLength: texts.join('').length,
+        domElementId: selectedSpans.length === 1
+          ? firstPosId
+          : `${firstPosId}~${lastPosId || firstPosId}`,
+      };
+
+      const selection: TextSelection = {
+        id: uuid(),
+        text: texts.join('').trim() || '(빈 영역)',
+        position: rangePosition,
+      };
+
+      setPendingSelection(selection);
+
+      // 브라우저 선택 해제 (하이라이트는 유지)
+      sel.removeAllRanges();
     };
 
-    content.addEventListener('mousedown', onMouseDown);
+    // 클릭 (단일 요소 선택)
+    const onClick = (e: MouseEvent) => {
+      if (!editMode) return;
+
+      // 텍스트 드래그 중이면 무시 (mouseup에서 처리)
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+
+      const target = (e.target as HTMLElement).closest('[data-pos-id]') as HTMLElement | null;
+      if (!target || !documentModel) return;
+
+      const posId = target.getAttribute('data-pos-id');
+      if (!posId) return;
+      const pos = documentModel.positionMap.get(posId);
+      if (!pos) return;
+
+      clearHighlights();
+      target.classList.add('selected');
+
+      setPendingSelection({
+        id: uuid(),
+        text: target.textContent?.trim() || '(빈 셀)',
+        position: pos,
+      });
+    };
+
     content.addEventListener('mouseup', onMouseUp);
+    content.addEventListener('click', onClick);
 
     return () => {
-      content.removeEventListener('mousedown', onMouseDown);
       content.removeEventListener('mouseup', onMouseUp);
+      content.removeEventListener('click', onClick);
     };
-  }, [editMode, documentModel, createSelection, collectDragRange, setPendingSelection]);
+  }, [editMode, documentModel, setPendingSelection]);
 
   if (isParsingDocument) {
     return (
@@ -156,7 +147,7 @@ export function DocumentViewer() {
     <div
       ref={wrapperRef}
       className={`border rounded-lg overflow-auto bg-white shadow-inner ${editMode ? 'edit-mode ring-2 ring-blue-400' : ''}`}
-      style={{ maxHeight: 'calc(100vh - 300px)', userSelect: editMode ? 'none' : 'auto' }}
+      style={{ maxHeight: 'calc(100vh - 300px)' }}
     >
       <div ref={contentRef} />
     </div>

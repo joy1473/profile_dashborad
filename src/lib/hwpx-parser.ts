@@ -365,7 +365,7 @@ export async function parseHwpx(file: File | Blob, fileName: string): Promise<Do
     .hwpx-run.selected { background: #FFEB3B; outline: 2px solid #FF9800; }
     .hwpx-run:hover { background: rgba(66, 133, 244, 0.1); }
     .hwpx-empty { display: inline-block; min-width: 40px; min-height: 16px; }
-    .edit-mode .hwpx-run { cursor: pointer; }
+    .edit-mode .hwpx-run { cursor: text; }
     .edit-mode .hwpx-blue:hover { background: rgba(51, 102, 255, 0.15); }
     .edit-mode .hwpx-empty:hover { background: rgba(255, 152, 0, 0.15); outline: 1px dashed #FF9800; }
     .hwpx-run.drag-selected { background: #C8E6C9; outline: 2px solid #4CAF50; }
