@@ -4,8 +4,8 @@ import { useBidAnalyzerStore } from '@/store/bid-analyzer-store';
 import { FileText, Upload, Download, Loader2 } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import JSZip from 'jszip';
 import type { MappingRow } from '@/types/bid-analyzer';
+import { generateHwpx } from '@/lib/hwpx-writer';
 
 export function WritingTab() {
   const {
@@ -45,32 +45,8 @@ export function WritingTab() {
 
     setGenerationStatus('generating');
     try {
-      // HWPX 수정: ZIP 내 XML 직접 수정
       if (file.type === 'hwpx') {
-        const zip = await JSZip.loadAsync(file.blob);
-
-        for (const row of mappingData) {
-          if (!row['ValuePosition'] || !row['Value']) continue;
-          try {
-            const pos = JSON.parse(String(row['ValuePosition']));
-            const sectionFile = zip.file(`Contents/section${pos.sectionIndex}.xml`);
-            if (!sectionFile) continue;
-
-            let xml = await sectionFile.async('string');
-            // Find and replace the text at the position
-            // This is a simplified approach - for production, use proper XML parsing
-            const keyText = String(row['Key'] || '');
-            const valueText = String(row['Value'] || '');
-            if (keyText && valueText) {
-              xml = xml.replace(keyText, valueText);
-            }
-            zip.file(`Contents/section${pos.sectionIndex}.xml`, xml);
-          } catch {
-            // Skip invalid positions
-          }
-        }
-
-        const blob = await zip.generateAsync({ type: 'blob' });
+        const blob = await generateHwpx(file.blob, mappingData);
         const now = new Date();
         const ts = now.getFullYear().toString() +
           String(now.getMonth() + 1).padStart(2, '0') +
