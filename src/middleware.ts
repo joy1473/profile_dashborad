@@ -1,61 +1,21 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 
-const PROTECTED_PATHS = [
-  "/dashboard",
-  "/analytics",
-  "/users",
-  "/board",
-  "/graph",
-  "/qr-cards",
-  "/settings",
-];
+// 미들웨어에서 인증 체크를 제거
+// Supabase 클라이언트는 localStorage 기반이므로 서버사이드 미들웨어에서 세션을 확인할 수 없음
+// 인증은 클라이언트 사이드의 (dashboard)/layout.tsx auth guard에서 처리
 
-const PUBLIC_PATHS = ["/login", "/auth", "/u/", "/api/auth-log"];
+const PUBLIC_PATHS = ["/login", "/auth", "/u/", "/api/"];
 
-export async function middleware(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Public paths → allow
+  // API, 인증, 공개 경로는 통과
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
-  // Only protect dashboard routes
-  if (!PROTECTED_PATHS.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
-  }
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  // If Supabase not configured, allow (dev mode)
-  if (!url || !key) {
-    return NextResponse.next();
-  }
-
-  // Check for auth token in cookies
-  const accessToken = request.cookies.get("sb-access-token")?.value
-    ?? request.cookies.get(`sb-${new URL(url).hostname.split(".")[0]}-auth-token`)?.value;
-
-  if (!accessToken) {
-    // No token found, try checking via Supabase
-    const supabase = createClient(url, key, {
-      global: {
-        headers: { cookie: request.headers.get("cookie") ?? "" },
-      },
-    });
-
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (!session) {
-      const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("redirect", pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-  }
-
+  // 그 외 모든 경로 통과 — 인증은 클라이언트에서 처리
   return NextResponse.next();
 }
 
