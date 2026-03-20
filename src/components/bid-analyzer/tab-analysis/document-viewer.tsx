@@ -1,15 +1,22 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import { useBidAnalyzerStore } from '@/store/bid-analyzer-store';
 import type { TextSelection, DocumentPosition } from '@/types/bid-analyzer';
 import { v4 as uuid } from 'uuid';
 
 export function DocumentViewer() {
   const { documentModel, editMode, setPendingSelection, isParsingDocument } = useBidAnalyzerStore();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<HTMLElement | null>(null);
+
+  // HTML이 변경될 때 contentRef에 직접 삽입
+  useEffect(() => {
+    if (contentRef.current && documentModel?.renderedHtml) {
+      contentRef.current.innerHTML = documentModel.renderedHtml;
+    }
+  }, [documentModel?.renderedHtml]);
 
   // 단일 요소에서 선택 생성
   const createSelection = useCallback((el: HTMLElement): TextSelection | null => {
@@ -18,7 +25,6 @@ export function DocumentViewer() {
     if (!posId) return null;
     const position = documentModel.positionMap.get(posId);
     if (!position) return null;
-
     return {
       id: uuid(),
       text: el.textContent?.trim() || '(빈 셀)',
@@ -28,9 +34,8 @@ export function DocumentViewer() {
 
   // 드래그 범위 내 모든 요소 수집
   const collectDragRange = useCallback((startEl: HTMLElement, endEl: HTMLElement): TextSelection | null => {
-    if (!documentModel || !containerRef.current) return null;
-
-    const allSpans = Array.from(containerRef.current.querySelectorAll('.hwpx-run'));
+    if (!documentModel || !contentRef.current) return null;
+    const allSpans = Array.from(contentRef.current.querySelectorAll('[data-pos-id]'));
     const startIdx = allSpans.indexOf(startEl);
     const endIdx = allSpans.indexOf(endEl);
     if (startIdx === -1 || endIdx === -1) return null;
@@ -40,27 +45,20 @@ export function DocumentViewer() {
     const selected = allSpans.slice(fromIdx, toIdx + 1);
 
     // 이전 drag-selected 해제
-    containerRef.current.querySelectorAll('.drag-selected').forEach((el) => {
-      el.classList.remove('drag-selected');
-    });
+    contentRef.current.querySelectorAll('.drag-selected').forEach((el) => el.classList.remove('drag-selected'));
 
-    // 범위 내 모든 요소에 drag-selected 클래스 추가
     const texts: string[] = [];
     for (const span of selected) {
       span.classList.add('drag-selected');
       texts.push(span.textContent || '');
     }
 
-    // 첫 번째 요소의 위치를 기준으로
     const firstPosId = selected[0].getAttribute('data-pos-id');
     if (!firstPosId) return null;
     const position = documentModel.positionMap.get(firstPosId);
     if (!position) return null;
 
-    // 범위 위치 정보에 마지막 요소까지 포함
     const lastPosId = selected[selected.length - 1].getAttribute('data-pos-id');
-    const lastPos = lastPosId ? documentModel.positionMap.get(lastPosId) : null;
-
     const rangePosition: DocumentPosition = {
       ...position,
       charLength: texts.join('').length,
@@ -74,47 +72,61 @@ export function DocumentViewer() {
     };
   }, [documentModel]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!editMode) return;
-    const target = (e.target as HTMLElement).closest('.hwpx-run') as HTMLElement | null;
-    if (!target) return;
+  // 네이티브 이벤트 핸들러 — React synthetic event 대신 직접 addEventListener
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
 
-    setIsDragging(true);
-    dragStartRef.current = target;
-  }, [editMode]);
+    const findTarget = (e: MouseEvent): HTMLElement | null => {
+      return (e.target as HTMLElement).closest('[data-pos-id]') as HTMLElement | null;
+    };
 
-  const handleMouseUp = useCallback((e: React.MouseEvent) => {
-    if (!editMode || !isDragging) return;
-    setIsDragging(false);
+    const onMouseDown = (e: MouseEvent) => {
+      if (!editMode) return;
+      const target = findTarget(e);
+      if (!target) return;
+      e.preventDefault(); // 텍스트 선택 방지
+      dragStartRef.current = target;
+    };
 
-    const target = (e.target as HTMLElement).closest('.hwpx-run') as HTMLElement | null;
-    if (!target) {
+    const onMouseUp = (e: MouseEvent) => {
+      if (!editMode || !dragStartRef.current) return;
+
+      const target = findTarget(e);
+      if (!target) {
+        dragStartRef.current = null;
+        return;
+      }
+
+      // 이전 선택 해제
+      content.querySelectorAll('.selected').forEach((el) => el.classList.remove('selected'));
+
+      let selection: TextSelection | null = null;
+
+      if (dragStartRef.current === target) {
+        // 클릭 (같은 요소)
+        target.classList.add('selected');
+        selection = createSelection(target);
+      } else {
+        // 드래그 범위
+        selection = collectDragRange(dragStartRef.current, target);
+      }
+
       dragStartRef.current = null;
-      return;
-    }
 
-    // 이전 selected 해제
-    containerRef.current?.querySelectorAll('.selected').forEach((el) => {
-      el.classList.remove('selected');
-    });
+      if (selection) {
+        setPendingSelection(selection);
+      }
+    };
 
-    let selection: TextSelection | null = null;
+    content.addEventListener('mousedown', onMouseDown);
+    content.addEventListener('mouseup', onMouseUp);
 
-    if (dragStartRef.current === target) {
-      // 클릭 (같은 요소에서 시작/끝)
-      target.classList.add('selected');
-      selection = createSelection(target);
-    } else if (dragStartRef.current) {
-      // 드래그 범위 선택
-      selection = collectDragRange(dragStartRef.current, target);
-    }
-
-    dragStartRef.current = null;
-
-    if (selection) {
-      setPendingSelection(selection);
-    }
-  }, [editMode, isDragging, createSelection, collectDragRange, setPendingSelection]);
+    return () => {
+      content.removeEventListener('mousedown', onMouseDown);
+      content.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [editMode, documentModel, createSelection, collectDragRange, setPendingSelection]);
 
   if (isParsingDocument) {
     return (
@@ -137,12 +149,11 @@ export function DocumentViewer() {
 
   return (
     <div
-      ref={containerRef}
-      className={`border rounded-lg overflow-auto bg-white shadow-inner select-none ${editMode ? 'edit-mode ring-2 ring-blue-400' : ''}`}
-      style={{ maxHeight: 'calc(100vh - 300px)' }}
-      onMouseDown={handleMouseDown}
-      onMouseUp={handleMouseUp}
-      dangerouslySetInnerHTML={{ __html: documentModel.renderedHtml }}
-    />
+      ref={wrapperRef}
+      className={`border rounded-lg overflow-auto bg-white shadow-inner ${editMode ? 'edit-mode ring-2 ring-blue-400' : ''}`}
+      style={{ maxHeight: 'calc(100vh - 300px)', userSelect: editMode ? 'none' : 'auto' }}
+    >
+      <div ref={contentRef} />
+    </div>
   );
 }
