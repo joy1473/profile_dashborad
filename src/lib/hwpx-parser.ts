@@ -243,10 +243,12 @@ function buildTableHtml(
       }
       const cellParaArr = allCellParas;
 
+      let cellHasContent = false;
       for (const cp of cellParaArr) {
         if (!cp) continue;
         const cellRuns = extractRuns(cp as Record<string, unknown>, charStyles);
         for (let ri = 0; ri < cellRuns.length; ri++) {
+          cellHasContent = true;
           const run = cellRuns[ri];
           const domId = `s${sectionIndex}-t${tableIndex}-r${rowIndex}-c${colIndex}-run${ri}`;
           const colorClass = run.isBlue ? 'hwpx-blue' : 'hwpx-black';
@@ -281,6 +283,31 @@ function buildTableHtml(
             },
           });
         }
+      }
+
+      // 빈 셀에도 클릭 가능한 placeholder 추가
+      if (!cellHasContent) {
+        const domId = `s${sectionIndex}-t${tableIndex}-r${rowIndex}-c${colIndex}-empty`;
+        const pos: DocumentPosition = {
+          fileType: 'hwpx',
+          sectionIndex,
+          tableIndex,
+          rowIndex,
+          colIndex,
+          paragraphIndex: 0,
+          runIndex: 0,
+          charOffset: 0,
+          charLength: 0,
+          domElementId: domId,
+        };
+        positionMap.set(domId, pos);
+        html += `<span id="${domId}" class="hwpx-run hwpx-empty" data-pos-id="${domId}">&nbsp;</span>`;
+        elements.push({
+          type: 'table',
+          position: pos,
+          content: '',
+          style: { color: '#999', fontSize: 10, bold: false, italic: false },
+        });
       }
 
       html += '</td>';
@@ -337,8 +364,11 @@ export async function parseHwpx(file: File | Blob, fileName: string): Promise<Do
     .hwpx-black { color: #000000; }
     .hwpx-run.selected { background: #FFEB3B; outline: 2px solid #FF9800; }
     .hwpx-run:hover { background: rgba(66, 133, 244, 0.1); }
+    .hwpx-empty { display: inline-block; min-width: 40px; min-height: 16px; }
     .edit-mode .hwpx-run { cursor: pointer; }
     .edit-mode .hwpx-blue:hover { background: rgba(51, 102, 255, 0.15); }
+    .edit-mode .hwpx-empty:hover { background: rgba(255, 152, 0, 0.15); outline: 1px dashed #FF9800; }
+    .hwpx-run.drag-selected { background: #C8E6C9; outline: 2px solid #4CAF50; }
   </style>`;
 
   for (const sf of sectionFiles) {
