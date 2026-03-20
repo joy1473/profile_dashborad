@@ -14,7 +14,7 @@ const xmlParser = new XMLParser({
   attributeNamePrefix: '@_',
   textNodeName: '#text',
   isArray: (name) => {
-    const arrayTags = ['hp:p', 'hp:run', 'hp:tbl', 'hp:tr', 'hp:tc', 'hh:charPr'];
+    const arrayTags = ['hp:p', 'hp:run', 'hp:tbl', 'hp:tr', 'hp:tc', 'hp:subList', 'hp:ctrl', 'hh:charPr'];
     return arrayTags.includes(name);
   },
 });
@@ -106,16 +106,41 @@ function buildSectionHtml(
     if (!para) continue;
 
     // Check if paragraph contains a table
+    // Tables can be in: hp:run > hp:tbl, hp:run > hp:ctrl > hp:tbl, or directly
     const runs = para['hp:run'];
     const runArr = Array.isArray(runs) ? runs : runs ? [runs] : [];
 
     let hasTable = false;
+
+    // Deep search for tables within runs
+    function findTables(obj: unknown): Record<string, unknown>[] {
+      const tables: Record<string, unknown>[] = [];
+      if (!obj || typeof obj !== 'object') return tables;
+      const o = obj as Record<string, unknown>;
+      if (o['hp:tbl']) {
+        const t = o['hp:tbl'];
+        const tArr = Array.isArray(t) ? t : [t];
+        for (const tb of tArr) {
+          if (tb) tables.push(tb as Record<string, unknown>);
+        }
+      }
+      // Check nested ctrl
+      if (o['hp:ctrl']) {
+        const ctrl = o['hp:ctrl'];
+        const ctrlArr = Array.isArray(ctrl) ? ctrl : [ctrl];
+        for (const c of ctrlArr) {
+          tables.push(...findTables(c));
+        }
+      }
+      return tables;
+    }
+
     for (const run of runArr) {
       if (!run) continue;
-      const tbl = (run as Record<string, unknown>)['hp:tbl'];
-      if (tbl) {
+      const tables = findTables(run);
+      for (const tbl of tables) {
         hasTable = true;
-        html += buildTableHtml(tbl as Record<string, unknown>, sectionIndex, tableIndex, charStyles, positionMap, elements);
+        html += buildTableHtml(tbl, sectionIndex, tableIndex, charStyles, positionMap, elements);
         tableIndex++;
       }
     }
@@ -193,16 +218,30 @@ function buildTableHtml(
     for (const cell of cellArr) {
       if (!cell) continue;
 
-      // Get cell span info
-      const cellAddr = (cell as Record<string, unknown>)['hp:cellAddr'] as Record<string, unknown> | undefined;
-      const colspan = Number(cellAddr?.['@_colSpan'] ?? 1);
-      const rowspan = Number(cellAddr?.['@_rowSpan'] ?? 1);
+      // Get cell span info — hp:cellSpan has colSpan/rowSpan
+      const cellSpan = (cell as Record<string, unknown>)['hp:cellSpan'] as Record<string, unknown> | undefined;
+      const colspan = Number(cellSpan?.['@_colSpan'] ?? 1);
+      const rowspan = Number(cellSpan?.['@_rowSpan'] ?? 1);
 
       html += `<td${colspan > 1 ? ` colspan="${colspan}"` : ''}${rowspan > 1 ? ` rowspan="${rowspan}"` : ''}>`;
 
-      // Cell paragraphs
-      const cellParas = (cell as Record<string, unknown>)['hp:p'];
-      const cellParaArr = Array.isArray(cellParas) ? cellParas : cellParas ? [cellParas] : [];
+      // Cell paragraphs — HWPX uses hp:tc > hp:subList > hp:p > hp:run
+      // subList can be array, collect all paragraphs
+      const subLists = (cell as Record<string, unknown>)['hp:subList'];
+      const subListArr = Array.isArray(subLists) ? subLists : subLists ? [subLists] : [];
+      let allCellParas: unknown[] = [];
+      for (const sl of subListArr) {
+        const slObj = sl as Record<string, unknown>;
+        const ps = slObj?.['hp:p'];
+        const psArr = Array.isArray(ps) ? ps : ps ? [ps] : [];
+        allCellParas.push(...psArr);
+      }
+      // Fallback: direct hp:p under hp:tc
+      if (allCellParas.length === 0) {
+        const directP = (cell as Record<string, unknown>)['hp:p'];
+        allCellParas = Array.isArray(directP) ? directP : directP ? [directP] : [];
+      }
+      const cellParaArr = allCellParas;
 
       for (const cp of cellParaArr) {
         if (!cp) continue;
