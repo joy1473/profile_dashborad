@@ -58,18 +58,21 @@ export async function generateHwpx(
     let xml = await sectionFile.async('string');
 
     for (const { key, value } of items) {
-      // XML 내 텍스트 교체
-      const escapedKey = escapeXml(key);
-      const escapedValue = escapeXml(value);
-      const pattern = new RegExp(`(<hp:t>)(${escapeRegex(escapedKey)})(</hp:t>)`, 'g');
+      if (!key || !value || key === value) continue;
+
+      // XML 내 <hp:t>KEY</hp:t> 정확히 매칭 — fallback 없음
+      // key는 브라우저에서 읽은 평문 텍스트이므로 XML 이스케이프 불필요
+      // 원본 XML에 이미 이스케이프된 상태로 저장되어 있음
+      // 따라서 key를 그대로 검색하고, value만 이스케이프하지 않음 (평문→평문 교체)
+      const safeKey = escapeRegex(key);
+      const pattern = new RegExp(`(<hp:t>)(${safeKey})(</hp:t>)`, 'g');
       if (pattern.test(xml)) {
         xml = xml.replace(
-          new RegExp(`(<hp:t>)(${escapeRegex(escapedKey)})(</hp:t>)`, 'g'),
-          `$1${escapedValue}$3`
+          new RegExp(`(<hp:t>)(${safeKey})(</hp:t>)`, 'g'),
+          `$1${value}$3`
         );
-      } else {
-        xml = xml.replace(new RegExp(escapeRegex(key), 'g'), escapeXml(value));
       }
+      // fallback 제거 — <hp:t> 밖의 텍스트를 건드리지 않음
     }
 
     const newData = new TextEncoder().encode(xml);
