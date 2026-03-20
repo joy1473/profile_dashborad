@@ -31,11 +31,17 @@ export function UserPresence() {
     }
 
     try {
-      const { data: profiles } = await supabase
+      const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
-        .select("id, name, avatar_url, last_sign_in_at, status")
+        .select("id, name, avatar_url, last_sign_in_at")
         .order("last_sign_in_at", { ascending: false, nullsFirst: false })
         .limit(20);
+
+      if (profilesError) {
+        console.warn("profiles 조회 실패:", profilesError.message);
+        setUsers(mockPresence);
+        return;
+      }
 
       const { data: activities } = await supabase
         .from("activities")
