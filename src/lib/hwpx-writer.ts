@@ -2,36 +2,39 @@ import JSZip from 'jszip';
 import type { MappingRow } from '@/types/bid-analyzer';
 
 /**
- * HWPX 파일의 XML 내 텍스트를 매핑 데이터 기반으로 교체하고 새 파일 생성
- * HWPX = ZIP(application/hwp+zip) 형식
- * - mimetype 파일: STORED(무압축) 유지 필수
- * - XML 파일: DEFLATED(압축)
+ * HWPX 파일 수정 — 원본 ZIP 구조 완전 보존
+ *
+ * HWPX 규격:
+ * 1. mimetype: 첫 번째 엔트리, STORED(무압축)
+ * 2. version.xml, PrvImage.png: STORED
+ * 3. 나머지 XML: DEFLATED
+ * 4. 폴더 엔트리(Contents/, META-INF/ 등) 없음
+ * 5. 파일 순서 원본과 동일
  */
+
+const STORED_FILES = new Set(['mimetype', 'version.xml', 'Preview/PrvImage.png']);
+
 export async function generateHwpx(
   originalBlob: Blob,
   mappingData: MappingRow[],
 ): Promise<Blob> {
-  // 원본 ZIP 로드
-  const zip = await JSZip.loadAsync(originalBlob);
+  const arrayBuffer = await originalBlob.arrayBuffer();
+  const zip = await JSZip.loadAsync(arrayBuffer);
 
-  // 섹션별로 교체할 항목 그룹핑
+  // 섹션별 교체 항목 수집
   const replacements = new Map<number, { key: string; value: string }[]>();
-
   for (const row of mappingData) {
     const valueText = String(row['Value'] || '').trim();
     const keyText = String(row['Key'] || '').trim();
     if (!keyText || !valueText) continue;
 
-    // ValuePosition에서 sectionIndex 추출
     let sectionIndex = 0;
     try {
       if (row['ValuePosition']) {
         const pos = JSON.parse(String(row['ValuePosition']));
         sectionIndex = pos.sectionIndex ?? 0;
       }
-    } catch {
-      // default section 0
-    }
+    } catch { /* default 0 */ }
 
     if (!replacements.has(sectionIndex)) {
       replacements.set(sectionIndex, []);
@@ -39,7 +42,7 @@ export async function generateHwpx(
     replacements.get(sectionIndex)!.push({ key: keyText, value: valueText });
   }
 
-  // 각 섹션 XML에서 텍스트 교체
+  // XML 교체 (원본 zip 객체를 직접 수정)
   for (const [sectionIdx, items] of replacements) {
     const sectionPath = `Contents/section${sectionIdx}.xml`;
     const sectionFile = zip.file(sectionPath);
@@ -48,44 +51,53 @@ export async function generateHwpx(
     let xml = await sectionFile.async('string');
 
     for (const { key, value } of items) {
-      // XML 내에서 <hp:t>KEY_TEXT</hp:t> 패턴을 찾아 교체
-      // XML 특수문자 이스케이프된 형태도 고려
       const escapedKey = escapeXml(key);
+      const escapedValue = escapeXml(value);
 
-      // 방법 1: <hp:t> 태그 내 정확한 텍스트 매칭
-      const tagPattern = new RegExp(
-        `(<hp:t>)${escapeRegex(escapedKey)}(</hp:t>)`,
-        'g'
+      // <hp:t> 태그 내 텍스트 교체
+      const pattern = new RegExp(
+        `(<hp:t>)(${escapeRegex(escapedKey)})(</hp:t>)`, 'g'
       );
-      if (tagPattern.test(xml)) {
-        xml = xml.replace(tagPattern, `$1${escapeXml(value)}$2`);
+      if (pattern.test(xml)) {
+        xml = xml.replace(
+          new RegExp(`(<hp:t>)(${escapeRegex(escapedKey)})(</hp:t>)`, 'g'),
+          `$1${escapedValue}$3`
+        );
       } else {
-        // 방법 2: 일반 텍스트 교체 (fallback)
-        xml = xml.replace(escapedKey, escapeXml(value));
+        // fallback
+        xml = xml.replace(new RegExp(escapeRegex(key), 'g'), escapeXml(value));
       }
     }
 
-    // 섹션 XML 업데이트 (DEFLATED 압축 유지)
-    zip.file(sectionPath, xml, { compression: 'DEFLATE' });
+    // 수정된 XML을 zip에 다시 저장 (임시)
+    zip.file(sectionPath, xml);
   }
 
-  // mimetype 파일은 STORED로 유지 (HWPX 필수)
-  const mimetypeContent = await zip.file('mimetype')?.async('string');
-  if (mimetypeContent) {
-    zip.file('mimetype', mimetypeContent, {
-      compression: 'STORE',
+  // 새 ZIP 생성 — 원본 구조 완전 복제
+  const newZip = new JSZip();
+
+  // 원본 파일 순서 유지 (폴더 제외, 파일만)
+  const fileList: string[] = [];
+  zip.forEach((path, entry) => {
+    if (!entry.dir) fileList.push(path);
+  });
+
+  for (const filePath of fileList) {
+    const fileObj = zip.file(filePath);
+    if (!fileObj) continue;
+    const data = await fileObj.async('uint8array');
+    const isStored = STORED_FILES.has(filePath);
+
+    newZip.file(filePath, data, {
+      compression: isStored ? 'STORE' : 'DEFLATE',
+      compressionOptions: isStored ? undefined : { level: 6 },
+      createFolders: false, // 폴더 엔트리 생성 안 함
     });
   }
 
-  // 새 ZIP 생성 — HWPX 호환 옵션
-  const newBlob = await zip.generateAsync({
+  return await newZip.generateAsync({
     type: 'blob',
-    mimeType: 'application/hwp+zip',
-    compression: 'DEFLATE',
-    compressionOptions: { level: 6 },
   });
-
-  return newBlob;
 }
 
 function escapeXml(text: string): string {
