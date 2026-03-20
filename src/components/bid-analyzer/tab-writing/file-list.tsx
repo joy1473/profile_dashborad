@@ -153,6 +153,25 @@ export function WritingTab() {
             <Download className="w-4 h-4" /> {resultName}
           </a>
         )}
+
+        {/* 디버그: 원본 그대로 다운로드 */}
+        {selectedFileForWriting && (
+          <button
+            onClick={() => {
+              const file = uploadedFiles.find((f) => f.id === selectedFileForWriting);
+              if (!file) return;
+              const url = URL.createObjectURL(file.blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `원본_${file.name}`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="flex items-center gap-2 mt-2 px-4 py-2 bg-gray-500 text-white rounded-lg text-xs hover:bg-gray-600 w-fit"
+          >
+            <Download className="w-3 h-3" /> 원본 그대로 다운로드 (테스트)
+          </button>
+        )}
       </div>
     </div>
   );
