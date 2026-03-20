@@ -45,9 +45,12 @@ export function KvPairPanel() {
     }
 
     setPendingSelection(null);
-    // Clear DOM selection
-    document.querySelectorAll('.hwpx-run.selected').forEach((el) => {
+    // Clear ALL DOM selections (selected + drag-selected)
+    document.querySelectorAll('.selected').forEach((el) => {
       el.classList.remove('selected');
+    });
+    document.querySelectorAll('.drag-selected').forEach((el) => {
+      el.classList.remove('drag-selected');
     });
   };
 

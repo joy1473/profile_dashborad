@@ -89,6 +89,11 @@ export function DocumentViewer() {
       dragStartRef.current = target;
     };
 
+    const clearAllSelections = () => {
+      content.querySelectorAll('.selected').forEach((el) => el.classList.remove('selected'));
+      content.querySelectorAll('.drag-selected').forEach((el) => el.classList.remove('drag-selected'));
+    };
+
     const onMouseUp = (e: MouseEvent) => {
       if (!editMode || !dragStartRef.current) return;
 
@@ -98,8 +103,8 @@ export function DocumentViewer() {
         return;
       }
 
-      // 이전 선택 해제
-      content.querySelectorAll('.selected').forEach((el) => el.classList.remove('selected'));
+      // 이전 선택 전체 해제 (selected + drag-selected)
+      clearAllSelections();
 
       let selection: TextSelection | null = null;
 
