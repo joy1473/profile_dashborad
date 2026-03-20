@@ -15,21 +15,42 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getSession().then((s) => {
-      if (!s) {
-        router.replace("/login");
-      } else {
+    let mounted = true;
+
+    getSession().then(async (s) => {
+      if (!mounted) return;
+      if (s) {
         setSession(s);
+        setLoading(false);
+      } else {
+        // 카카오 콜백 직후 세션 안정화 대기 (레이스 컨디션 방지)
+        await new Promise((r) => setTimeout(r, 500));
+        if (!mounted) return;
+        const retry = await getSession().catch(() => null);
+        if (retry) {
+          setSession(retry);
+          setLoading(false);
+        } else {
+          router.replace("/login");
+          setLoading(false);
+        }
       }
-      setLoading(false);
     });
 
     const { data: { subscription } } = onAuthStateChange((s) => {
-      setSession(s);
-      if (!s) router.replace("/login");
+      if (!mounted) return;
+      if (s) {
+        setSession(s);
+        setLoading(false);
+      } else if (!loading) {
+        router.replace("/login");
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [router]);
 
   if (loading) {

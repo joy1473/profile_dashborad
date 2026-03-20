@@ -78,5 +78,14 @@ export async function handleKakaoCallback(): Promise<boolean> {
   if (error) {
     throw new Error(`세션 생성 실패: ${error.message}`);
   }
+
+  // 세션이 안정화될 때까지 대기 — layout auth guard와의 레이스 컨디션 방지
+  let retries = 0;
+  while (retries < 10) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) return true;
+    await new Promise((r) => setTimeout(r, 200));
+    retries++;
+  }
   return true;
 }
