@@ -12,9 +12,10 @@ export default function KakaoCallbackPage() {
     handleKakaoCallback()
       .then((ok) => {
         if (ok) {
-          router.replace("/dashboard");
+          // window.location.href로 전체 리로드 — layout auth guard가 새로 마운트되어 세션 감지
+          window.location.href = "/dashboard";
         } else {
-          router.replace("/login");
+          window.location.href = "/login";
         }
       })
       .catch((err) => {
