@@ -60,19 +60,13 @@ export async function generateHwpx(
     for (const { key, value } of items) {
       if (!key || !value || key === value) continue;
 
-      // XML 내 <hp:t>KEY</hp:t> 정확히 매칭 — fallback 없음
-      // key는 브라우저에서 읽은 평문 텍스트이므로 XML 이스케이프 불필요
-      // 원본 XML에 이미 이스케이프된 상태로 저장되어 있음
-      // 따라서 key를 그대로 검색하고, value만 이스케이프하지 않음 (평문→평문 교체)
+      // <hp:t> 태그의 전체 내용이 key와 정확히 일치할 때만 교체
+      // 부분 매칭 절대 금지 — "과제명"이 "① 과제명"에 매칭되면 안 됨
       const safeKey = escapeRegex(key);
-      const pattern = new RegExp(`(<hp:t>)(${safeKey})(</hp:t>)`, 'g');
-      if (pattern.test(xml)) {
-        xml = xml.replace(
-          new RegExp(`(<hp:t>)(${safeKey})(</hp:t>)`, 'g'),
-          `$1${value}$3`
-        );
-      }
-      // fallback 제거 — <hp:t> 밖의 텍스트를 건드리지 않음
+
+      // 정확한 전체 매칭: <hp:t>KEY</hp:t> (KEY가 태그의 유일한 내용)
+      const exactPattern = new RegExp(`<hp:t>${safeKey}</hp:t>`, 'g');
+      xml = xml.replace(exactPattern, `<hp:t>${value}</hp:t>`);
     }
 
     const newData = new TextEncoder().encode(xml);
