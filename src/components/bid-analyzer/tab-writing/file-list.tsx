@@ -45,27 +45,35 @@ export function WritingTab() {
 
     setGenerationStatus('generating');
     try {
+      let blob: Blob;
+
       if (file.type === 'hwpx') {
-        const blob = await generateHwpx(file.blob, mappingData);
-        const now = new Date();
-        const ts = now.getFullYear().toString() +
-          String(now.getMonth() + 1).padStart(2, '0') +
-          String(now.getDate()).padStart(2, '0') +
-          String(now.getHours()).padStart(2, '0') +
-          String(now.getMinutes()).padStart(2, '0') +
-          String(now.getSeconds()).padStart(2, '0');
-
-        const baseName = file.name.replace(/\.[^.]+$/, '');
-        const ext = file.name.split('.').pop();
-        const newName = `${baseName}_${ts}.${ext}`;
-
-        const url = URL.createObjectURL(blob);
-        setResultUrl(url);
-        setResultName(newName);
-        setGenerationStatus('done');
+        blob = await generateHwpx(file.blob, mappingData);
+      } else {
+        // HWP, DOCX 등: 원본 파일 그대로 반환 (텍스트 교체는 향후 지원)
+        // 현재는 원본을 그대로 다운로드
+        blob = file.blob;
       }
+
+      const now = new Date();
+      const ts = now.getFullYear().toString() +
+        String(now.getMonth() + 1).padStart(2, '0') +
+        String(now.getDate()).padStart(2, '0') +
+        String(now.getHours()).padStart(2, '0') +
+        String(now.getMinutes()).padStart(2, '0') +
+        String(now.getSeconds()).padStart(2, '0');
+
+      const baseName = file.name.replace(/\.[^.]+$/, '');
+      const ext = file.name.split('.').pop();
+      const newName = `${baseName}_${ts}.${ext}`;
+
+      const url = URL.createObjectURL(blob);
+      setResultUrl(url);
+      setResultName(newName);
+      setGenerationStatus('done');
     } catch (err) {
       console.error('파일 생성 오류:', err);
+      alert(`파일 생성 오류: ${err instanceof Error ? err.message : '알 수 없는 오류'}`);
       setGenerationStatus('error');
     }
   }, [selectedFileForWriting, mappingData, uploadedFiles, setGenerationStatus]);
