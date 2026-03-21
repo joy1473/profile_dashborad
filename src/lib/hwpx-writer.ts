@@ -79,58 +79,60 @@ async function processConvertedHwpx(
       allTags.push({ match: m[0], text: m[1], index: m.index });
     }
 
+    // 모든 <hp:p>...</hp:p> 블록을 파싱
+    const allParas: { full: string; texts: string[]; index: number }[] = [];
+    const paraPattern = /<hp:p[^>]*>[\s\S]*?<\/hp:p>/g;
+    let pm;
+    while ((pm = paraPattern.exec(xml)) !== null) {
+      // 이 문단 내의 모든 <hp:t> 텍스트 추출
+      const texts: string[] = [];
+      const tPattern = /<hp:t>([\s\S]*?)<\/hp:t>/g;
+      let tm;
+      while ((tm = tPattern.exec(pm[0])) !== null) {
+        texts.push(tm[1]);
+      }
+      allParas.push({ full: pm[0], texts, index: pm.index });
+    }
+
     for (const { key, value } of pairs) {
-      // Key 텍스트가 정확히 일치하는 <hp:t> 태그를 찾기
-      const keyTagIdx = allTags.findIndex(t => t.text.trim() === key.trim());
+      // Key 텍스트를 포함하는 문단 찾기
+      const keyParaIdx = allParas.findIndex(p =>
+        p.texts.some(t => t.trim() === key.trim())
+      );
 
-      if (keyTagIdx !== -1 && keyTagIdx + 1 < allTags.length) {
-        // Case A: Key와 Value가 별도 <hp:t>에 있음 (가장 일반적)
-        // Key 다음 <hp:t>의 내용을 Value로 완전 교체
-        const valueTag = allTags[keyTagIdx + 1];
-
-        // 줄바꿈이 있는 value → 여러 <hp:p> 문단으로 분할
+      if (keyParaIdx !== -1 && keyParaIdx + 1 < allParas.length) {
+        // Key 다음 문단 전체를 Value로 교체
+        // 다음 문단의 모든 <hp:run>을 제거하고 Value 하나로 교체
+        const valuePara = allParas[keyParaIdx + 1];
         const valueXml = valueToHwpxParagraphs(value);
-        const newMatch = valueXml;
 
-        // 기존 valueTag를 새 내용으로 교체
-        // valueTag가 속한 <hp:p>...</hp:p> 전체를 교체하여 잔류 방지
-        const pStartPattern = new RegExp(
-          `<hp:p[^>]*>[\\s\\S]*?${escapeRegex(valueTag.match)}[\\s\\S]*?</hp:p>`
-        );
-        const pMatch = xml.match(pStartPattern);
-        if (pMatch) {
-          xml = xml.replace(pMatch[0], valueXml);
-        } else {
-          xml = xml.replace(valueTag.match, `<hp:t>${escapeXml(value)}</hp:t>`);
-        }
+        xml = xml.replace(valuePara.full, valueXml);
+
+        // allParas 업데이트 (이후 매핑에 영향 방지)
+        allParas[keyParaIdx + 1] = {
+          ...valuePara,
+          full: valueXml,
+          texts: [value],
+        };
         continue;
       }
 
-      // Case B: Key가 다른 텍스트 안에 포함됨 (부분 매칭)
-      const partialIdx = allTags.findIndex(t => t.text.includes(key));
-      if (partialIdx !== -1) {
-        const tag = allTags[partialIdx];
-        // Key 이후 내용을 Value로 교체
-        const keyEndPos = tag.text.indexOf(key) + key.length;
-        const newText = tag.text.substring(0, keyEndPos);
+      // Key가 정확히 일치하지 않으면 부분 포함으로 검색
+      const partialParaIdx = allParas.findIndex(p =>
+        p.texts.some(t => t.includes(key)) &&
+        !p.texts.some(t => t.trim() === key.trim()) // 정확 매칭은 위에서 처리됨
+      );
 
-        // 같은 문단의 나머지 내용 제거하고, Value를 다음 문단으로 추가
+      if (partialParaIdx !== -1) {
+        // Key가 포함된 문단에서 Key 부분만 남기고 나머지 제거 + Value 문단 추가
+        const para = allParas[partialParaIdx];
+        const keyOnlyPara = `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>${escapeXml(key)}</hp:t></hp:run></hp:p>`;
         const valueXml = valueToHwpxParagraphs(value);
 
-        // 기존 태그를 Key만 남기고, 바로 뒤에 Value 문단 삽입
-        const tagEndInXml = xml.indexOf(tag.match) + tag.match.length;
-        // 현재 </hp:p> 찾기
-        const pEndIdx = xml.indexOf('</hp:p>', tagEndInXml);
-        if (pEndIdx !== -1) {
-          const beforeReplace = xml.substring(0, xml.indexOf(tag.match));
-          const afterReplace = xml.substring(pEndIdx + '</hp:p>'.length);
-          xml = beforeReplace + `<hp:t>${escapeXml(newText)}</hp:t></hp:run></hp:p>` + valueXml + afterReplace;
-        }
+        xml = xml.replace(para.full, keyOnlyPara + valueXml);
+        allParas[partialParaIdx] = { ...para, full: keyOnlyPara + valueXml, texts: [key, value] };
       }
     }
-
-    // allTags 재구축 (다음 섹션 처리를 위해)
-    // 이미 pairs 처리 완료했으므로 불필요
 
     zip.file(path, xml, { createFolders: false });
   }
