@@ -100,37 +100,42 @@ async function processConvertedHwpx(
         p.texts.some(t => t.trim() === key.trim())
       );
 
-      if (keyParaIdx !== -1 && keyParaIdx + 1 < allParas.length) {
-        // Key 다음 문단 전체를 Value로 교체
-        // 다음 문단의 모든 <hp:run>을 제거하고 Value 하나로 교체
-        const valuePara = allParas[keyParaIdx + 1];
-        const valueXml = valueToHwpxParagraphs(value);
+      if (keyParaIdx !== -1) {
+        const keyPara = allParas[keyParaIdx];
 
-        xml = xml.replace(valuePara.full, valueXml);
+        // Key만 있는 문단인지, Key+기존Value가 같은 문단에 있는지 판별
+        // 같은 문단에 Key 외에 다른 텍스트가 있으면 → 같은 문단에 Value 있음
+        const keyIsAlone = keyPara.texts.length === 1 && keyPara.texts[0].trim() === key.trim();
 
-        // allParas 업데이트 (이후 매핑에 영향 방지)
-        allParas[keyParaIdx + 1] = {
-          ...valuePara,
-          full: valueXml,
-          texts: [value],
-        };
+        if (keyIsAlone && keyParaIdx + 1 < allParas.length) {
+          // Case A: Key만 있는 문단 → 다음 문단이 Value
+          const valuePara = allParas[keyParaIdx + 1];
+          const valueXml = valueToHwpxParagraphs(value);
+          xml = xml.replace(valuePara.full, valueXml);
+          allParas[keyParaIdx + 1] = { ...valuePara, full: valueXml, texts: [value] };
+
+        } else {
+          // Case B: Key + 기존Value가 같은 문단에 있음
+          // 예: ['주관기관 : ', '00', '명'] → Key='주관기관 :', Value='12명'
+          // → 문단 전체를 [Key + Value]로 교체
+          const newPara = `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>${escapeXml(key)}</hp:t></hp:run><hp:run charPrIDRef="0"><hp:t>${escapeXml(value)}</hp:t></hp:run></hp:p>`;
+          xml = xml.replace(keyPara.full, newPara);
+          allParas[keyParaIdx] = { ...keyPara, full: newPara, texts: [key, value] };
+        }
         continue;
       }
 
       // Key가 정확히 일치하지 않으면 부분 포함으로 검색
       const partialParaIdx = allParas.findIndex(p =>
-        p.texts.some(t => t.includes(key)) &&
-        !p.texts.some(t => t.trim() === key.trim()) // 정확 매칭은 위에서 처리됨
+        p.texts.some(t => t.includes(key))
       );
 
       if (partialParaIdx !== -1) {
-        // Key가 포함된 문단에서 Key 부분만 남기고 나머지 제거 + Value 문단 추가
         const para = allParas[partialParaIdx];
-        const keyOnlyPara = `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>${escapeXml(key)}</hp:t></hp:run></hp:p>`;
-        const valueXml = valueToHwpxParagraphs(value);
-
-        xml = xml.replace(para.full, keyOnlyPara + valueXml);
-        allParas[partialParaIdx] = { ...para, full: keyOnlyPara + valueXml, texts: [key, value] };
+        // Key+Value가 같은 문단 → Key만 남기고 Value 교체
+        const newPara = `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>${escapeXml(key)}</hp:t></hp:run><hp:run charPrIDRef="0"><hp:t>${escapeXml(value)}</hp:t></hp:run></hp:p>`;
+        xml = xml.replace(para.full, newPara);
+        allParas[partialParaIdx] = { ...para, full: newPara, texts: [key, value] };
       }
     }
 
