@@ -80,35 +80,57 @@ async function processConvertedHwpx(
     }
 
     for (const { key, value } of pairs) {
-      // Key 텍스트가 포함된 <hp:t> 태그를 찾기
-      const keyTagIdx = allTags.findIndex(t => t.text.includes(key));
-      if (keyTagIdx === -1) continue;
+      // Key 텍스트가 정확히 일치하는 <hp:t> 태그를 찾기
+      const keyTagIdx = allTags.findIndex(t => t.text.trim() === key.trim());
 
-      const keyTag = allTags[keyTagIdx];
+      if (keyTagIdx !== -1 && keyTagIdx + 1 < allTags.length) {
+        // Case A: Key와 Value가 별도 <hp:t>에 있음 (가장 일반적)
+        // Key 다음 <hp:t>의 내용을 Value로 완전 교체
+        const valueTag = allTags[keyTagIdx + 1];
 
-      // Case 1: Key와 Value가 같은 <hp:t> 안에 있음
-      // 예: <hp:t>과제명    XR 풀스택...</hp:t>
-      // → Key 부분 유지하고 나머지를 Value로 교체
-      if (keyTag.text.includes(key) && keyTag.text.length > key.length + 2) {
-        // Key 뒤의 내용을 Value로 교체
-        const keyPos = keyTag.text.indexOf(key);
-        const beforeKey = keyTag.text.substring(0, keyPos);
-        const newText = beforeKey + key + '\t' + value;
-        xml = xml.replace(keyTag.match, `<hp:t>${newText}</hp:t>`);
-        // allTags 업데이트
-        allTags[keyTagIdx] = { ...keyTag, match: `<hp:t>${newText}</hp:t>`, text: newText };
+        // 줄바꿈이 있는 value → 여러 <hp:p> 문단으로 분할
+        const valueXml = valueToHwpxParagraphs(value);
+        const newMatch = valueXml;
+
+        // 기존 valueTag를 새 내용으로 교체
+        // valueTag가 속한 <hp:p>...</hp:p> 전체를 교체하여 잔류 방지
+        const pStartPattern = new RegExp(
+          `<hp:p[^>]*>[\\s\\S]*?${escapeRegex(valueTag.match)}[\\s\\S]*?</hp:p>`
+        );
+        const pMatch = xml.match(pStartPattern);
+        if (pMatch) {
+          xml = xml.replace(pMatch[0], valueXml);
+        } else {
+          xml = xml.replace(valueTag.match, `<hp:t>${escapeXml(value)}</hp:t>`);
+        }
         continue;
       }
 
-      // Case 2: Key와 Value가 다른 <hp:t>에 있음
-      // Key 다음 <hp:t>를 찾아서 전체 교체
-      if (keyTagIdx + 1 < allTags.length) {
-        const valueTag = allTags[keyTagIdx + 1];
-        const newMatch = `<hp:t>${value}</hp:t>`;
-        xml = xml.replace(valueTag.match, newMatch);
-        allTags[keyTagIdx + 1] = { ...valueTag, match: newMatch, text: value };
+      // Case B: Key가 다른 텍스트 안에 포함됨 (부분 매칭)
+      const partialIdx = allTags.findIndex(t => t.text.includes(key));
+      if (partialIdx !== -1) {
+        const tag = allTags[partialIdx];
+        // Key 이후 내용을 Value로 교체
+        const keyEndPos = tag.text.indexOf(key) + key.length;
+        const newText = tag.text.substring(0, keyEndPos);
+
+        // 같은 문단의 나머지 내용 제거하고, Value를 다음 문단으로 추가
+        const valueXml = valueToHwpxParagraphs(value);
+
+        // 기존 태그를 Key만 남기고, 바로 뒤에 Value 문단 삽입
+        const tagEndInXml = xml.indexOf(tag.match) + tag.match.length;
+        // 현재 </hp:p> 찾기
+        const pEndIdx = xml.indexOf('</hp:p>', tagEndInXml);
+        if (pEndIdx !== -1) {
+          const beforeReplace = xml.substring(0, xml.indexOf(tag.match));
+          const afterReplace = xml.substring(pEndIdx + '</hp:p>'.length);
+          xml = beforeReplace + `<hp:t>${escapeXml(newText)}</hp:t></hp:run></hp:p>` + valueXml + afterReplace;
+        }
       }
     }
+
+    // allTags 재구축 (다음 섹션 처리를 위해)
+    // 이미 pairs 처리 완료했으므로 불필요
 
     zip.file(path, xml, { createFolders: false });
   }
@@ -181,6 +203,16 @@ async function patchOriginalHwpx(
 
   // 바이너리 패치 방식 대신 JSZip 재패킹 (HWP→HWPX 변환 파일에는 문제 없음)
   return await zip.generateAsync({ type: 'blob' });
+}
+
+/** Value 텍스트를 HWPX 문단 XML로 변환 (줄바꿈 → 별도 <hp:p>) */
+function valueToHwpxParagraphs(value: string): string {
+  const lines = value.split('\n').filter(l => l.trim());
+  if (lines.length === 0) return '<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t> </hp:t></hp:run></hp:p>';
+
+  return lines.map(line =>
+    `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>${escapeXml(line.trim())}</hp:t></hp:run></hp:p>`
+  ).join('');
 }
 
 function escapeXml(text: string): string {
