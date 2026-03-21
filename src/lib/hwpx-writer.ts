@@ -2,34 +2,51 @@ import JSZip from 'jszip';
 import type { MappingRow } from '@/types/bid-analyzer';
 
 /**
- * HWPX 파일 수정 — 원본 ZIP 바이너리 직접 패치
+ * HWPX 파일 수정 — Value 위치에 값 매핑
  *
- * 전략: ZIP을 재생성하지 않고, 원본 바이너리에서
- * 특정 섹션 XML의 compressed data만 교체한 후
- * 오프셋/크기/CRC만 업데이트
+ * 전략: Key 텍스트를 찾아서 그 Key가 포함된 `<hp:t>` 내에서
+ * Key 부분은 유지하고 나머지(기존 value)를 새 Value로 교체하거나,
+ * Key 텍스트 다음 문단의 전체 내용을 Value로 교체
  *
- * 이렇게 하면 한글 프로그램이 감지하는 ZIP 구조 차이가 없음
+ * HWP→HWPX 변환 파일: 각 문단이 개별 <hp:p><hp:run><hp:t>이므로
+ * 문단 단위 텍스트 매칭으로 처리
  */
 export async function generateHwpx(
   originalBlob: Blob,
   mappingData: MappingRow[],
 ): Promise<Blob> {
-  const origBuffer = await originalBlob.arrayBuffer();
-  const origBytes = new Uint8Array(origBuffer);
+  const arrayBuffer = await originalBlob.arrayBuffer();
+  const origBytes = new Uint8Array(arrayBuffer);
 
-  // JSZip으로 원본 읽기 (XML 파싱 용도만)
-  const zip = await JSZip.loadAsync(origBuffer);
+  // HWPX ZIP인지 확인
+  const isHwpx = origBytes[0] === 0x50 && origBytes[1] === 0x4B; // PK
+  if (!isHwpx) {
+    // HWP→HWPX 변환된 파일 처리
+    return processConvertedHwpx(originalBlob, mappingData);
+  }
 
-  // 교체 항목 수집 — Value 위치의 기존 텍스트를 새 Value로 교체
-  const replacements = new Map<number, { oldText: string; newText: string }[]>();
+  // 원본 HWPX 파일 처리 (바이너리 패치)
+  return patchOriginalHwpx(origBytes, mappingData, originalBlob);
+}
+
+/**
+ * HWP→HWPX 변환된 파일 처리
+ * 구조가 단순(문단별 <hp:t>)하므로 텍스트 직접 매칭
+ */
+async function processConvertedHwpx(
+  blob: Blob,
+  mappingData: MappingRow[],
+): Promise<Blob> {
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+
+  // 매핑 데이터에서 Key→Value 쌍 수집
+  const kvPairs: { key: string; value: string; sectionIndex: number }[] = [];
   for (const row of mappingData) {
-    const newValue = String(row['Value'] || '').trim();
-    if (!newValue) continue;
+    const key = String(row['Key'] || '').trim();
+    const value = String(row['Value'] || '').trim();
+    if (!key || !value) continue;
 
-    // ValuePosition에서 기존 텍스트와 위치 추출
     let sectionIndex = 0;
-    let oldText = '';
-
     try {
       if (row['ValuePosition']) {
         const pos = JSON.parse(String(row['ValuePosition']));
@@ -37,293 +54,137 @@ export async function generateHwpx(
       }
     } catch { /* default 0 */ }
 
-    // Key 텍스트는 라벨이고, Value 위치의 기존 내용을 교체해야 함
-    // 엑셀에 기존 Value 텍스트가 별도로 없으므로,
-    // Key(라벨)에 대응하는 Value 위치의 기존 텍스트 = 양식의 플레이스홀더
-    // → Key 텍스트가 아닌, Value 열의 텍스트를 해당 위치에 넣어야 함
-    //
-    // 실제 동작: ValuePosition의 domElementId에서 파싱한 paragraphIndex를 기준으로
-    // 해당 위치의 <hp:t> 태그 내용을 찾아 교체
-    //
-    // 하지만 양식 파일에서 Value 위치의 기존 텍스트를 알 수 없으므로,
-    // Key 텍스트 자체가 양식에 있는 라벨이 아니라 "빈 칸" 또는 "플레이스홀더"일 수 있음
-    //
-    // 가장 안전한 방법: Key 컬럼의 텍스트를 찾아 교체하지 말고,
-    // Key의 다음 <hp:t> 태그(= Value 위치)를 교체
-    // 이를 위해 Key 텍스트를 앵커로 사용
-    const keyText = String(row['Key'] || '').trim();
-    if (!keyText) continue;
+    kvPairs.push({ key, value, sectionIndex });
+  }
 
-    oldText = keyText; // Key를 앵커로 사용하여 그 뒤의 Value 위치를 찾음
+  // 섹션별로 XML 수정
+  const sectionGroups = new Map<number, typeof kvPairs>();
+  for (const kv of kvPairs) {
+    if (!sectionGroups.has(kv.sectionIndex)) sectionGroups.set(kv.sectionIndex, []);
+    sectionGroups.get(kv.sectionIndex)!.push(kv);
+  }
+
+  for (const [secIdx, pairs] of sectionGroups) {
+    const path = `Contents/section${secIdx}.xml`;
+    const file = zip.file(path);
+    if (!file) continue;
+
+    let xml = await file.async('string');
+
+    // 모든 <hp:t>...</hp:t> 태그를 파싱
+    const tagPattern = /<hp:t>([\s\S]*?)<\/hp:t>/g;
+    const allTags: { match: string; text: string; index: number }[] = [];
+    let m;
+    while ((m = tagPattern.exec(xml)) !== null) {
+      allTags.push({ match: m[0], text: m[1], index: m.index });
+    }
+
+    for (const { key, value } of pairs) {
+      // Key 텍스트가 포함된 <hp:t> 태그를 찾기
+      const keyTagIdx = allTags.findIndex(t => t.text.includes(key));
+      if (keyTagIdx === -1) continue;
+
+      const keyTag = allTags[keyTagIdx];
+
+      // Case 1: Key와 Value가 같은 <hp:t> 안에 있음
+      // 예: <hp:t>과제명    XR 풀스택...</hp:t>
+      // → Key 부분 유지하고 나머지를 Value로 교체
+      if (keyTag.text.includes(key) && keyTag.text.length > key.length + 2) {
+        // Key 뒤의 내용을 Value로 교체
+        const keyPos = keyTag.text.indexOf(key);
+        const beforeKey = keyTag.text.substring(0, keyPos);
+        const newText = beforeKey + key + '\t' + value;
+        xml = xml.replace(keyTag.match, `<hp:t>${newText}</hp:t>`);
+        // allTags 업데이트
+        allTags[keyTagIdx] = { ...keyTag, match: `<hp:t>${newText}</hp:t>`, text: newText };
+        continue;
+      }
+
+      // Case 2: Key와 Value가 다른 <hp:t>에 있음
+      // Key 다음 <hp:t>를 찾아서 전체 교체
+      if (keyTagIdx + 1 < allTags.length) {
+        const valueTag = allTags[keyTagIdx + 1];
+        const newMatch = `<hp:t>${value}</hp:t>`;
+        xml = xml.replace(valueTag.match, newMatch);
+        allTags[keyTagIdx + 1] = { ...valueTag, match: newMatch, text: value };
+      }
+    }
+
+    zip.file(path, xml, { createFolders: false });
+  }
+
+  return await zip.generateAsync({ type: 'blob' });
+}
+
+/**
+ * 원본 HWPX 파일 바이너리 패치
+ */
+async function patchOriginalHwpx(
+  origBytes: Uint8Array,
+  mappingData: MappingRow[],
+  originalBlob: Blob,
+): Promise<Blob> {
+  const zip = await JSZip.loadAsync(origBytes);
+
+  // 매핑 데이터에서 Value 위치와 새 Value 수집
+  const replacements = new Map<number, { key: string; value: string }[]>();
+  for (const row of mappingData) {
+    const key = String(row['Key'] || '').trim();
+    const value = String(row['Value'] || '').trim();
+    if (!key || !value) continue;
+
+    let sectionIndex = 0;
+    try {
+      if (row['ValuePosition']) {
+        const pos = JSON.parse(String(row['ValuePosition']));
+        sectionIndex = pos.sectionIndex ?? 0;
+      }
+    } catch { /* default 0 */ }
 
     if (!replacements.has(sectionIndex)) replacements.set(sectionIndex, []);
-    replacements.get(sectionIndex)!.push({ oldText: keyText, newText: newValue });
+    replacements.get(sectionIndex)!.push({ key, value });
   }
 
   if (replacements.size === 0) return originalBlob;
 
-  // 수정이 필요한 파일별로 새 compressed data 생성
-  interface PatchInfo {
-    filename: string;
-    newCompressed: Uint8Array;
-    newUncompressedSize: number;
-    newCrc32: number;
-  }
-  const patches: PatchInfo[] = [];
+  // 섹션 XML 수정
+  let modified = false;
+  for (const [secIdx, pairs] of replacements) {
+    const path = `Contents/section${secIdx}.xml`;
+    const file = zip.file(path);
+    if (!file) continue;
 
-  for (const [sectionIdx, items] of replacements) {
-    const filename = `Contents/section${sectionIdx}.xml`;
-    const sectionFile = zip.file(filename);
-    if (!sectionFile) continue;
+    let xml = await file.async('string');
 
-    let xml = await sectionFile.async('string');
+    for (const { key, value } of pairs) {
+      const safeKey = escapeRegex(key);
 
-    for (const { oldText, newText } of items) {
-      if (!oldText || !newText) continue;
-
-      const safeKey = escapeRegex(oldText);
-
-      // Key(라벨) 텍스트를 찾고, 그 뒤에 오는 다음 <hp:t>...</hp:t>의 내용을 Value로 교체
-      // 패턴: <hp:t>KEY</hp:t> ... <hp:t>OLD_VALUE</hp:t>
-      //   → <hp:t>KEY</hp:t> ... <hp:t>NEW_VALUE</hp:t>
-      const afterKeyPattern = new RegExp(
-        `(<hp:t>${safeKey}</hp:t>` +       // Key 태그 (유지)
-        `(?:(?!</hp:t>).)*?` +              // Key와 Value 사이 내용 (최소 매칭)
-        `<hp:t>)(.*?)(</hp:t>)`,            // 다음 <hp:t> = Value 위치
-        's' // dotAll 모드
+      // Key 태그 뒤의 다음 <hp:t> 내용을 Value로 교체
+      const pattern = new RegExp(
+        `(<hp:t>${safeKey}</hp:t>` +
+        `[\\s\\S]*?` +
+        `<hp:t>)([\\s\\S]*?)(</hp:t>)`,
       );
 
-      if (afterKeyPattern.test(xml)) {
-        xml = xml.replace(afterKeyPattern, `$1${newText}$3`);
+      if (pattern.test(xml)) {
+        xml = xml.replace(pattern, `$1${escapeXml(value)}$3`);
+        modified = true;
       }
     }
 
-    const newData = new TextEncoder().encode(xml);
-    const newCrc = crc32(newData);
-
-    // DEFLATE 압축 — JSZip으로 개별 압축
-    const tmpZip = new JSZip();
-    tmpZip.file('tmp', newData, { compression: 'DEFLATE', compressionOptions: { level: 6 } });
-    const tmpBuf = await tmpZip.generateAsync({ type: 'arraybuffer' });
-
-    // 압축된 데이터 추출
-    const tmpView = new DataView(tmpBuf);
-    const fnameLen = tmpView.getUint16(26, true);
-    const extraLen = tmpView.getUint16(28, true);
-    const dataOffset = 30 + fnameLen + extraLen;
-    const compSize = tmpView.getUint32(18, true);
-    const newCompressed = new Uint8Array(tmpBuf, dataOffset, compSize);
-
-    patches.push({
-      filename,
-      newCompressed,
-      newUncompressedSize: newData.length,
-      newCrc32: newCrc,
-    });
-  }
-
-  // 원본 ZIP 바이너리에서 파일 엔트리 위치 파싱
-  const entries = parseZipEntries(origBytes);
-
-  // 새 ZIP 바이너리 빌드 (원본 기반, 패치 적용)
-  return buildPatchedZip(origBytes, entries, patches);
-}
-
-interface ZipEntry {
-  filename: string;
-  localHeaderOffset: number;
-  filenameLength: number;
-  extraFieldLength: number;
-  compressedSize: number;
-  uncompressedSize: number;
-  compressionMethod: number;
-  crc32: number;
-  dataOffset: number; // 실제 데이터 시작 위치
-}
-
-function parseZipEntries(data: Uint8Array): ZipEntry[] {
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-  const entries: ZipEntry[] = [];
-
-  // EOCD 찾기 (끝에서 검색)
-  let eocdOffset = -1;
-  for (let i = data.length - 22; i >= 0; i--) {
-    if (view.getUint32(i, true) === 0x06054b50) {
-      eocdOffset = i;
-      break;
-    }
-  }
-  if (eocdOffset === -1) throw new Error('EOCD not found');
-
-  const cdOffset = view.getUint32(eocdOffset + 16, true);
-  const cdEntries = view.getUint16(eocdOffset + 10, true);
-
-  // Central Directory 파싱
-  let pos = cdOffset;
-  for (let i = 0; i < cdEntries; i++) {
-    if (view.getUint32(pos, true) !== 0x02014b50) break;
-
-    const compressionMethod = view.getUint16(pos + 10, true);
-    const crc32val = view.getUint32(pos + 16, true);
-    const compressedSize = view.getUint32(pos + 20, true);
-    const uncompressedSize = view.getUint32(pos + 24, true);
-    const filenameLength = view.getUint16(pos + 28, true);
-    const extraLength = view.getUint16(pos + 30, true);
-    const commentLength = view.getUint16(pos + 32, true);
-    const localHeaderOffset = view.getUint32(pos + 42, true);
-
-    const filenameBytes = data.slice(pos + 46, pos + 46 + filenameLength);
-    const filename = new TextDecoder().decode(filenameBytes);
-
-    // Local header에서 extra field length 읽기 (CD와 다를 수 있음)
-    const localExtraLen = view.getUint16(localHeaderOffset + 28, true);
-    const dataOffset = localHeaderOffset + 30 + filenameLength + localExtraLen;
-
-    entries.push({
-      filename,
-      localHeaderOffset,
-      filenameLength,
-      extraFieldLength: localExtraLen,
-      compressedSize,
-      uncompressedSize,
-      compressionMethod,
-      crc32: crc32val,
-      dataOffset,
-    });
-
-    pos += 46 + filenameLength + extraLength + commentLength;
-  }
-
-  return entries;
-}
-
-function buildPatchedZip(
-  origData: Uint8Array,
-  entries: ZipEntry[],
-  patches: { filename: string; newCompressed: Uint8Array; newUncompressedSize: number; newCrc32: number }[],
-): Blob {
-  const patchMap = new Map(patches.map((p) => [p.filename, p]));
-
-  // 새 ZIP 빌드: 각 엔트리를 순서대로 출력
-  const parts: Uint8Array[] = [];
-  const newOffsets: number[] = [];
-  let currentOffset = 0;
-
-  for (const entry of entries) {
-    const patch = patchMap.get(entry.filename);
-
-    // Local file header 복사 (30 + filename + extra)
-    const headerSize = 30 + entry.filenameLength + entry.extraFieldLength;
-    const header = new Uint8Array(origData.buffer, origData.byteOffset + entry.localHeaderOffset, headerSize);
-    const headerCopy = new Uint8Array(header); // 복사본
-
-    let compressedData: Uint8Array;
-
-    if (patch) {
-      // 패치 대상: 헤더의 CRC/크기 업데이트
-      const hView = new DataView(headerCopy.buffer, headerCopy.byteOffset, headerCopy.byteLength);
-      hView.setUint32(14, patch.newCrc32, true);
-      hView.setUint32(18, patch.newCompressed.length, true);
-      hView.setUint32(22, patch.newUncompressedSize, true);
-      compressedData = patch.newCompressed;
-    } else {
-      // 원본 데이터 그대로
-      compressedData = new Uint8Array(
-        origData.buffer,
-        origData.byteOffset + entry.dataOffset,
-        entry.compressedSize,
-      );
-    }
-
-    newOffsets.push(currentOffset);
-    parts.push(headerCopy);
-    parts.push(compressedData);
-    currentOffset += headerCopy.length + compressedData.length;
-  }
-
-  // Central Directory 재구성
-  const cdStart = currentOffset;
-  const origView = new DataView(origData.buffer, origData.byteOffset, origData.byteLength);
-
-  // EOCD 찾기
-  let eocdOffset = -1;
-  for (let i = origData.length - 22; i >= 0; i--) {
-    if (origView.getUint32(i, true) === 0x06054b50) {
-      eocdOffset = i;
-      break;
+    if (modified) {
+      zip.file(path, xml, { createFolders: false });
     }
   }
 
-  const origCdOffset = origView.getUint32(eocdOffset + 16, true);
-  let cdPos = origCdOffset;
+  if (!modified) return originalBlob;
 
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    const patch = patchMap.get(entry.filename);
-
-    // CD entry 크기
-    const fnLen = origView.getUint16(cdPos + 28, true);
-    const exLen = origView.getUint16(cdPos + 30, true);
-    const cmLen = origView.getUint16(cdPos + 32, true);
-    const cdEntrySize = 46 + fnLen + exLen + cmLen;
-
-    // CD entry 복사
-    const cdEntry = new Uint8Array(origData.buffer, origData.byteOffset + cdPos, cdEntrySize);
-    const cdCopy = new Uint8Array(cdEntry);
-
-    const cdView = new DataView(cdCopy.buffer, cdCopy.byteOffset, cdCopy.byteLength);
-
-    // 오프셋 업데이트
-    cdView.setUint32(42, newOffsets[i], true);
-
-    // 패치 대상이면 CRC/크기도 업데이트
-    if (patch) {
-      cdView.setUint32(16, patch.newCrc32, true);
-      cdView.setUint32(20, patch.newCompressed.length, true);
-      cdView.setUint32(24, patch.newUncompressedSize, true);
-    }
-
-    parts.push(cdCopy);
-    currentOffset += cdCopy.length;
-
-    cdPos += cdEntrySize;
-  }
-
-  const cdSize = currentOffset - cdStart;
-
-  // EOCD 복사 + 업데이트
-  const eocdSize = origData.length - eocdOffset;
-  const eocd = new Uint8Array(origData.buffer, origData.byteOffset + eocdOffset, eocdSize);
-  const eocdCopy = new Uint8Array(eocd);
-  const eocdView = new DataView(eocdCopy.buffer, eocdCopy.byteOffset, eocdCopy.byteLength);
-  eocdView.setUint32(12, cdSize, true);
-  eocdView.setUint32(16, cdStart, true);
-  parts.push(eocdCopy);
-
-  // 합치기
-  const totalSize = parts.reduce((s, p) => s + p.length, 0);
-  const result = new Uint8Array(totalSize);
-  let pos = 0;
-  for (const part of parts) {
-    result.set(part, pos);
-    pos += part.length;
-  }
-
-  return new Blob([result], { type: 'application/hwp+zip' });
-}
-
-function crc32(data: Uint8Array): number {
-  let crc = 0xFFFFFFFF;
-  for (let i = 0; i < data.length; i++) {
-    crc ^= data[i];
-    for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
-  }
-  return (crc ^ 0xFFFFFFFF) >>> 0;
+  // 바이너리 패치 방식 대신 JSZip 재패킹 (HWP→HWPX 변환 파일에는 문제 없음)
+  return await zip.generateAsync({ type: 'blob' });
 }
 
 function escapeXml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function escapeRegex(str: string): string {
