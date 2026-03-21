@@ -20,14 +20,16 @@ export async function generateHwpx(
   // JSZip으로 원본 읽기 (XML 파싱 용도만)
   const zip = await JSZip.loadAsync(origBuffer);
 
-  // 교체 항목 수집
-  const replacements = new Map<number, { key: string; value: string }[]>();
+  // 교체 항목 수집 — Value 위치의 기존 텍스트를 새 Value로 교체
+  const replacements = new Map<number, { oldText: string; newText: string }[]>();
   for (const row of mappingData) {
-    const valueText = String(row['Value'] || '').trim();
-    const keyText = String(row['Key'] || '').trim();
-    if (!keyText || !valueText) continue;
+    const newValue = String(row['Value'] || '').trim();
+    if (!newValue) continue;
 
+    // ValuePosition에서 기존 텍스트와 위치 추출
     let sectionIndex = 0;
+    let oldText = '';
+
     try {
       if (row['ValuePosition']) {
         const pos = JSON.parse(String(row['ValuePosition']));
@@ -35,8 +37,27 @@ export async function generateHwpx(
       }
     } catch { /* default 0 */ }
 
+    // Key 텍스트는 라벨이고, Value 위치의 기존 내용을 교체해야 함
+    // 엑셀에 기존 Value 텍스트가 별도로 없으므로,
+    // Key(라벨)에 대응하는 Value 위치의 기존 텍스트 = 양식의 플레이스홀더
+    // → Key 텍스트가 아닌, Value 열의 텍스트를 해당 위치에 넣어야 함
+    //
+    // 실제 동작: ValuePosition의 domElementId에서 파싱한 paragraphIndex를 기준으로
+    // 해당 위치의 <hp:t> 태그 내용을 찾아 교체
+    //
+    // 하지만 양식 파일에서 Value 위치의 기존 텍스트를 알 수 없으므로,
+    // Key 텍스트 자체가 양식에 있는 라벨이 아니라 "빈 칸" 또는 "플레이스홀더"일 수 있음
+    //
+    // 가장 안전한 방법: Key 컬럼의 텍스트를 찾아 교체하지 말고,
+    // Key의 다음 <hp:t> 태그(= Value 위치)를 교체
+    // 이를 위해 Key 텍스트를 앵커로 사용
+    const keyText = String(row['Key'] || '').trim();
+    if (!keyText) continue;
+
+    oldText = keyText; // Key를 앵커로 사용하여 그 뒤의 Value 위치를 찾음
+
     if (!replacements.has(sectionIndex)) replacements.set(sectionIndex, []);
-    replacements.get(sectionIndex)!.push({ key: keyText, value: valueText });
+    replacements.get(sectionIndex)!.push({ oldText: keyText, newText: newValue });
   }
 
   if (replacements.size === 0) return originalBlob;
@@ -57,16 +78,24 @@ export async function generateHwpx(
 
     let xml = await sectionFile.async('string');
 
-    for (const { key, value } of items) {
-      if (!key || !value || key === value) continue;
+    for (const { oldText, newText } of items) {
+      if (!oldText || !newText) continue;
 
-      // <hp:t> 태그의 전체 내용이 key와 정확히 일치할 때만 교체
-      // 부분 매칭 절대 금지 — "과제명"이 "① 과제명"에 매칭되면 안 됨
-      const safeKey = escapeRegex(key);
+      const safeKey = escapeRegex(oldText);
 
-      // 정확한 전체 매칭: <hp:t>KEY</hp:t> (KEY가 태그의 유일한 내용)
-      const exactPattern = new RegExp(`<hp:t>${safeKey}</hp:t>`, 'g');
-      xml = xml.replace(exactPattern, `<hp:t>${value}</hp:t>`);
+      // Key(라벨) 텍스트를 찾고, 그 뒤에 오는 다음 <hp:t>...</hp:t>의 내용을 Value로 교체
+      // 패턴: <hp:t>KEY</hp:t> ... <hp:t>OLD_VALUE</hp:t>
+      //   → <hp:t>KEY</hp:t> ... <hp:t>NEW_VALUE</hp:t>
+      const afterKeyPattern = new RegExp(
+        `(<hp:t>${safeKey}</hp:t>` +       // Key 태그 (유지)
+        `(?:(?!</hp:t>).)*?` +              // Key와 Value 사이 내용 (최소 매칭)
+        `<hp:t>)(.*?)(</hp:t>)`,            // 다음 <hp:t> = Value 위치
+        's' // dotAll 모드
+      );
+
+      if (afterKeyPattern.test(xml)) {
+        xml = xml.replace(afterKeyPattern, `$1${newText}$3`);
+      }
     }
 
     const newData = new TextEncoder().encode(xml);
