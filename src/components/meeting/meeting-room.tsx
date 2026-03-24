@@ -60,23 +60,16 @@ export function MeetingRoom({ roomName, displayName, meetingTitle, onLeave }: Me
             prejoinPageEnabled: false,
             disableDeepLinking: true,
             lang: "ko",
+            lobbyEnabled: false,
+            enableLobby: false,
+            requireDisplayName: false,
+            enableInsecureRoomNameWarning: false,
+            enableWelcomePage: false,
           }}
           interfaceConfigOverwrite={{
             DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
             SHOW_JITSI_WATERMARK: false,
             SHOW_WATERMARK_FOR_GUESTS: false,
-            TOOLBAR_BUTTONS: [
-              "microphone",
-              "camera",
-              "desktop",
-              "fullscreen",
-              "chat",
-              "raisehand",
-              "participants-pane",
-              "tileview",
-              "select-background",
-              "settings",
-            ],
           }}
           userInfo={{ displayName, email: "" }}
           onApiReady={(api) => {
