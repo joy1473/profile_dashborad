@@ -4,15 +4,24 @@ import { cn } from "@/lib/utils";
 import type { GraphFilterState, GraphNodeType, GraphLinkType } from "@/types/graph";
 
 const NODE_TYPE_CONFIG: { type: GraphNodeType; label: string; color: string }[] = [
-  { type: "user", label: "User", color: "bg-blue-500" },
-  { type: "issue", label: "Issue", color: "bg-orange-500" },
-  { type: "label", label: "Label", color: "bg-green-500" },
+  { type: "person", label: "사람", color: "bg-blue-500" },
+  { type: "skill", label: "스킬", color: "bg-emerald-500" },
+  { type: "project", label: "프로젝트", color: "bg-amber-500" },
+  { type: "education", label: "교육", color: "bg-violet-500" },
+  { type: "certificate", label: "자격증", color: "bg-red-500" },
+  { type: "document", label: "문서", color: "bg-pink-500" },
+  { type: "role", label: "역할", color: "bg-cyan-500" },
+  { type: "tool", label: "도구", color: "bg-slate-500" },
 ];
 
 const LINK_TYPE_CONFIG: { type: GraphLinkType; label: string }[] = [
-  { type: "ASSIGNED_TO", label: "Assigned" },
-  { type: "LABELED_WITH", label: "Labeled" },
-  { type: "CREATED_BY", label: "Created" },
+  { type: "HAS_SKILL", label: "스킬" },
+  { type: "WORKED_ON", label: "프로젝트" },
+  { type: "COMPLETED", label: "교육" },
+  { type: "EARNED", label: "자격증" },
+  { type: "AUTHORED", label: "문서" },
+  { type: "HAS_ROLE", label: "역할" },
+  { type: "USES_TOOL", label: "도구" },
 ];
 
 interface GraphFiltersProps {

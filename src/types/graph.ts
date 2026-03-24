@@ -1,18 +1,17 @@
-export type GraphNodeType = "user" | "issue" | "label";
+export type GraphNodeType = "person" | "skill" | "project" | "education" | "certificate" | "document" | "role" | "tool" | "user" | "issue" | "label";
 
-export type GraphLinkType = "ASSIGNED_TO" | "LABELED_WITH" | "CREATED_BY";
+export type GraphLinkType =
+  | "HAS_SKILL" | "WORKED_ON" | "COMPLETED" | "EARNED"
+  | "AUTHORED" | "HAS_ROLE" | "USES_TOOL" | "USED_IN"
+  // 레거시 호환
+  | "ASSIGNED_TO" | "LABELED_WITH" | "CREATED_BY";
 
 export interface GraphNode {
   id: string;
   name: string;
   type: GraphNodeType;
   meta?: {
-    email?: string;
-    role?: string;
-    status?: string;
-    priority?: string;
-    color?: string;
-    [key: string]: string | undefined;
+    [key: string]: string | number | undefined;
   };
   x?: number;
   y?: number;
@@ -32,8 +31,8 @@ export interface GraphData {
 }
 
 export interface GraphFilterState {
-  nodeTypes: Record<GraphNodeType, boolean>;
-  linkTypes: Record<GraphLinkType, boolean>;
+  nodeTypes: Record<string, boolean>;
+  linkTypes: Record<string, boolean>;
   search: string;
 }
 

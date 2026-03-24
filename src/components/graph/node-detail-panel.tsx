@@ -1,19 +1,49 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { X, User, AlertCircle, Tag, ExternalLink } from "lucide-react";
+import { X, User, Zap, FolderOpen, GraduationCap, Award, FileText, Briefcase, Wrench } from "lucide-react";
 import type { SelectedNode } from "@/types/graph";
 
-const TYPE_ICONS = {
-  user: User,
-  issue: AlertCircle,
-  label: Tag,
+const TYPE_ICONS: Record<string, typeof User> = {
+  person: User,
+  skill: Zap,
+  project: FolderOpen,
+  education: GraduationCap,
+  certificate: Award,
+  document: FileText,
+  role: Briefcase,
+  tool: Wrench,
 };
 
-const TYPE_LABELS = {
-  user: "User",
-  issue: "Issue",
-  label: "Label",
+const TYPE_LABELS: Record<string, string> = {
+  person: "사람",
+  skill: "스킬",
+  project: "프로젝트",
+  education: "교육",
+  certificate: "자격증",
+  document: "문서",
+  role: "역할",
+  tool: "도구",
+};
+
+const META_LABELS: Record<string, string> = {
+  category: "카테고리",
+  level: "수준",
+  tech: "기술스택",
+  status: "상태",
+  description: "설명",
+  provider: "교육기관",
+  issuer: "발급기관",
+  date: "날짜",
+  hours: "시간(h)",
+  department: "부서",
+  email: "이메일",
+  type: "유형",
+};
+
+const LEVEL_LABELS: Record<string, string> = {
+  high: "상",
+  medium: "중",
+  low: "하",
 };
 
 interface NodeDetailPanelProps {
@@ -22,14 +52,12 @@ interface NodeDetailPanelProps {
 }
 
 export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
-  const router = useRouter();
-
   if (!node) return null;
 
-  const Icon = TYPE_ICONS[node.type];
+  const Icon = TYPE_ICONS[node.type] ?? User;
   const meta = node.meta ?? {};
   const metaEntries = Object.entries(meta).filter(
-    ([k]) => !["id", "name", "title"].includes(k) && meta[k] !== undefined
+    ([k, v]) => !["id", "name", "title", "userId", "avatarUrl", "elementId"].includes(k) && v !== undefined && v !== ""
   );
 
   return (
@@ -40,8 +68,8 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon size={18} className="text-zinc-500" />
-          <span className="text-xs font-medium uppercase text-zinc-400">
-            {TYPE_LABELS[node.type]}
+          <span className="text-xs font-medium text-zinc-400">
+            {TYPE_LABELS[node.type] ?? node.type}
           </span>
         </div>
         <button
@@ -60,23 +88,15 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
         <dl className="space-y-1.5">
           {metaEntries.map(([key, value]) => (
             <div key={key} className="flex items-baseline gap-2 text-sm">
-              <dt className="min-w-[70px] font-medium capitalize text-zinc-500 dark:text-zinc-400">
-                {key}
+              <dt className="min-w-[70px] font-medium text-zinc-500 dark:text-zinc-400">
+                {META_LABELS[key] ?? key}
               </dt>
-              <dd className="text-zinc-900 dark:text-zinc-100">{value}</dd>
+              <dd className="text-zinc-900 dark:text-zinc-100">
+                {key === "level" ? LEVEL_LABELS[String(value)] ?? value : String(value)}
+              </dd>
             </div>
           ))}
         </dl>
-      )}
-
-      {node.type === "issue" && (
-        <button
-          onClick={() => router.push(`/board?issue=${meta.id ?? node.id}`)}
-          className="mt-3 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <ExternalLink size={14} />
-          보드에서 보기
-        </button>
       )}
     </div>
   );

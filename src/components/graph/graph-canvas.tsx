@@ -11,18 +11,43 @@ const ForceGraph2D = dynamic(
 );
 
 const NODE_COLORS: Record<string, string> = {
+  person: "#3b82f6",
+  skill: "#10b981",
+  project: "#f59e0b",
+  education: "#8b5cf6",
+  certificate: "#ef4444",
+  document: "#ec4899",
+  role: "#06b6d4",
+  tool: "#64748b",
+  // 레거시
   user: "#3b82f6",
   issue: "#f97316",
   label: "#22c55e",
 };
 
 const NODE_SIZES: Record<string, number> = {
+  person: 10,
+  skill: 6,
+  project: 7,
+  education: 6,
+  certificate: 6,
+  document: 5,
+  role: 7,
+  tool: 5,
   user: 8,
   issue: 6,
   label: 5,
 };
 
 const LINK_COLORS: Record<string, string> = {
+  HAS_SKILL: "#10b981",
+  WORKED_ON: "#f59e0b",
+  COMPLETED: "#8b5cf6",
+  EARNED: "#ef4444",
+  AUTHORED: "#ec4899",
+  HAS_ROLE: "#06b6d4",
+  USES_TOOL: "#64748b",
+  USED_IN: "#94a3b8",
   ASSIGNED_TO: "#60a5fa",
   LABELED_WITH: "#4ade80",
   CREATED_BY: "#fb923c",

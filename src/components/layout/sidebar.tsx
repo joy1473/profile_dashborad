@@ -12,7 +12,7 @@ const navItems = [
   { href: "/users", label: "사용자", icon: Users },
   { href: "/qr-cards", label: "QR 명함", icon: QrCode },
   { href: "/board", label: "보드", icon: Columns3 },
-  { href: "/graph", label: "그래프", icon: Network },
+  { href: "/graph", label: "SW역량", icon: Network },
   { href: "/settings", label: "회의", icon: Video },
 ];
 
