@@ -114,7 +114,7 @@ export default function DashboardPage() {
     const startAt = buildTimestamp(form.startDate, form.allDay ? "00:00" : form.startTime);
     const endAt = buildTimestamp(form.endDate, form.allDay ? "23:59" : form.endTime);
 
-    await supabase.from("events").update({
+    const { error } = await supabase.from("events").update({
       title: form.title.trim(),
       description: form.description.trim(),
       start_at: startAt,
@@ -124,13 +124,17 @@ export default function DashboardPage() {
       meeting_room_name: form.meetingRoomName || null,
     }).eq("id", editEvent.id);
 
+    if (error) { alert(`일정 수정 실패: ${error.message}`); return; }
+
     setEditEvent(null);
     resetForm();
     fetchEvents();
   };
 
   const deleteEvent = async (id: string) => {
-    await supabase.from("events").delete().eq("id", id);
+    if (!window.confirm("일정을 삭제하시겠습니까?")) return;
+    const { error } = await supabase.from("events").delete().eq("id", id);
+    if (error) { alert(`삭제 실패: ${error.message}`); return; }
     setEditEvent(null);
     resetForm();
     setEvents((prev) => prev.filter((e) => e.id !== id));

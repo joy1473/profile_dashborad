@@ -43,13 +43,18 @@ export function Header() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   const fetchNotifications = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setCurrentUserId(user.id);
     const { data } = await supabase
       .from("notifications")
       .select("*")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(20);
     if (data) setNotifications(data);

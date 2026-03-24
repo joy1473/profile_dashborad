@@ -78,7 +78,7 @@ export default function GraphPage() {
             action: "ensurePerson",
             data: { userId: user.id, name: user.user_metadata?.full_name ?? user.email ?? "", email: user.email, avatarUrl: user.user_metadata?.avatar_url },
           }),
-        }).catch(() => {});
+        }).catch((err) => console.error("Person 노드 생성 실패:", err));
       }
     });
   }, []);
@@ -176,13 +176,18 @@ export default function GraphPage() {
   // 프로필 저장
   const saveProfile = async () => {
     if (!userId) return;
-    await fetch("/api/graph", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "updatePerson", data: { userId, ...profileForm } }),
-    });
-    showToast("프로필 저장 완료");
-    setShowProfile(false);
-    fetchGraph();
+    try {
+      const res = await fetch("/api/graph", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "updatePerson", data: { userId, ...profileForm } }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      showToast("프로필 저장 완료");
+      setShowProfile(false);
+      fetchGraph();
+    } catch {
+      showToast("프로필 저장 실패");
+    }
   };
 
   // 통계

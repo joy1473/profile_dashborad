@@ -75,14 +75,16 @@ export default function MeetingPage() {
 
   const joinMeeting = async (meeting: Meeting) => {
     if (meeting.status === "waiting") {
-      await supabase.from("meetings").update({ status: "active" }).eq("id", meeting.id);
+      const { error } = await supabase.from("meetings").update({ status: "active" }).eq("id", meeting.id);
+      if (error) { alert(`회의 참여 실패: ${error.message}`); return; }
     }
     setActiveMeeting({ ...meeting, status: "active" });
   };
 
   const leaveMeeting = async () => {
     if (activeMeeting) {
-      await supabase.from("meetings").update({ status: "ended", ended_at: new Date().toISOString() }).eq("id", activeMeeting.id);
+      const { error } = await supabase.from("meetings").update({ status: "ended", ended_at: new Date().toISOString() }).eq("id", activeMeeting.id);
+      if (error) { alert(`회의 종료 실패: ${error.message}`); return; }
     }
     setActiveMeeting(null);
     fetchMeetings();
