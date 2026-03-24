@@ -1,0 +1,1500 @@
+======================================================================
+// 파일: src/app/(dashboard)/analytics/page.tsx
+======================================================================
+"use client";
+
+import { AnalyzerTabs } from "@/components/bid-analyzer/analyzer-tabs";
+
+export default function AnalyticsPage() {
+  return (
+    <div className="h-[calc(100vh-64px)]">
+      <AnalyzerTabs />
+    </div>
+  );
+}
+
+
+======================================================================
+// 파일: src/app/(dashboard)/board/page.tsx
+======================================================================
+"use client";
+
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
+import { Plus } from "lucide-react";
+import { KanbanBoard } from "@/components/board/kanban-board";
+import { IssueModal } from "@/components/board/issue-modal";
+import { IssueFilters } from "@/components/board/issue-filters";
+import { useToast } from "@/components/ui/toast";
+import { useRealtimeIssues, getRealtimeToastMessage } from "@/hooks/use-realtime-issues";
+import type { RealtimeIssueEvent } from "@/hooks/use-realtime-issues";
+import { fetchIssues, createIssue, updateIssue, deleteIssue, moveIssue } from "@/lib/issues";
+import { fetchProfiles } from "@/lib/users";
+import { fetchSubtaskCounts } from "@/lib/subtasks";
+import { fetchLinkCounts } from "@/lib/links";
+import { supabase } from "@/lib/supabase";
+import { MyTasks } from "@/components/board/my-tasks";
+import { CalendarBoard } from "@/components/board/calendar-board";
+import { BoardSkeleton } from "@/components/skeletons/board-skeleton";
+import { cn } from "@/lib/utils";
+import type { Issue, IssueStatus, IssuePriority, CreateIssueInput } from "@/types/issue";
+import type { User } from "@/types";
+import type { SubtaskCount } from "@/types/subtask";
+
+export default function BoardPage() {
+  const searchParams = useSearchParams();
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { showToast } = useToast();
+
+  // Tab & subtask state
+  const [activeTab, setActiveTab] = useState<"board" | "calendar" | "my-tasks">("board");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [subtaskCounts, setSubtaskCounts] = useState<Map<string, SubtaskCount>>(new Map());
+  const [linkCounts, setLinkCounts] = useState<Map<string, number>>(new Map());
+
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingIssue, setEditingIssue] = useState<Issue | null>(null);
+
+  // Filters
+  const [search, setSearch] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState<IssuePriority | "all">("all");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+
+  // Derive unique assignee names for filter dropdown
+  const assignees = useMemo(() => {
+    const names = issues
+      .map((i) => i.assignee_name)
+      .filter((n): n is string => n !== null);
+    return [...new Set(names)].sort();
+  }, [issues]);
+
+  const loadIssues = useCallback(async () => {
+    try {
+      const data = await fetchIssues();
+      setIssues(data);
+      setError(null);
+    } catch {
+      setError("이슈를 불러올 수 없습니다");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadIssues();
+    fetchProfiles().then(setUsers);
+    supabase.auth.getUser().then(({ data }) => {
+      setCurrentUserId(data.user?.id ?? null);
+    });
+  }, [loadIssues]);
+
+  // Load subtask counts when issues change
+  useEffect(() => {
+    const ids = issues.map((i) => i.id);
+    fetchSubtaskCounts(ids).then(setSubtaskCounts);
+    fetchLinkCounts(ids).then(setLinkCounts);
+  }, [issues]);
+
+  // Open issue modal from URL query param (?issue=ID) — e.g. from graph page
+  useEffect(() => {
+    const issueId = searchParams.get("issue");
+    if (issueId && issues.length > 0 && !modalOpen) {
+      const found = issues.find((i) => i.id === issueId);
+      if (found) {
+        setEditingIssue(found);
+        setModalOpen(true);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, issues]);
+
+  // Realtime: 다른 클라이언트의 이슈 변경을 자동 반영
+  const handleRealtimeEvent = useCallback(
+    (event: RealtimeIssueEvent) => {
+      switch (event.eventType) {
+        case "INSERT":
+          if (event.new)
+            setIssues((prev) =>
+              prev.some((i) => i.id === (event.new as Issue).id)
+                ? prev
+                : [...prev, event.new as Issue]
+            );
+          break;
+        case "UPDATE":
+          if (event.new)
+            setIssues((prev) =>
+              prev.map((i) =>
+                i.id === (event.new as Issue).id ? (event.new as Issue) : i
+              )
+            );
+          break;
+        case "DELETE":
+          setIssues((prev) => prev.filter((i) => i.id !== event.old.id));
+          break;
+      }
+      showToast(getRealtimeToastMessage(event), "success");
+    },
+    [showToast]
+  );
+
+  useRealtimeIssues(handleRealtimeEvent);
+
+  const handleMove = useCallback(
+    async (issueId: string, newStatus: IssueStatus, newPosition: number) => {
+      const original = issues.find((i) => i.id === issueId);
+      if (!original) return;
+
+      // Optimistic update
+      setIssues((prev) =>
+        prev.map((i) =>
+          i.id === issueId ? { ...i, status: newStatus, position: newPosition } : i
+        )
+      );
+
+      try {
+        await moveIssue(issueId, newStatus, newPosition);
+      } catch {
+        // Rollback
+        setIssues((prev) =>
+          prev.map((i) =>
+            i.id === issueId ? { ...i, status: original.status, position: original.position } : i
+          )
+        );
+        showToast("이동에 실패했습니다");
+      }
+    },
+    [issues, showToast]
+  );
+
+  const handleSave = useCallback(
+    async (input: CreateIssueInput) => {
+      try {
+        if (editingIssue) {
+          const updated = await updateIssue(editingIssue.id, input);
+          setIssues((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+          showToast("이슈가 수정되었습니다", "success");
+        } else {
+          const created = await createIssue(input);
+          setIssues((prev) => [...prev, created]);
+          showToast("이슈가 생성되었습니다", "success");
+        }
+        setModalOpen(false);
+        setEditingIssue(null);
+      } catch {
+        showToast(editingIssue ? "이슈 수정에 실패했습니다" : "이슈 생성에 실패했습니다");
+      }
+    },
+    [editingIssue, showToast]
+  );
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      try {
+        await deleteIssue(id);
+        setIssues((prev) => prev.filter((i) => i.id !== id));
+        setModalOpen(false);
+        setEditingIssue(null);
+        showToast("이슈가 삭제되었습니다", "success");
+      } catch {
+        showToast("이슈 삭제에 실패했습니다");
+      }
+    },
+    [showToast]
+  );
+
+  const handleCardClick = useCallback((issue: Issue) => {
+    setEditingIssue(issue);
+    setModalOpen(true);
+  }, []);
+
+  const openCreateModal = useCallback(() => {
+    setEditingIssue(null);
+    setModalOpen(true);
+  }, []);
+
+  // Apply filters
+  const filteredIssues = issues.filter((issue) => {
+    if (priorityFilter !== "all" && issue.priority !== priorityFilter) return false;
+    if (assigneeFilter !== "all" && issue.assignee_name !== assigneeFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return (
+        issue.title.toLowerCase().includes(q) ||
+        issue.labels.some((l) => l.toLowerCase().includes(q)) ||
+        (issue.assignee_name?.toLowerCase().includes(q) ?? false)
+      );
+    }
+    return true;
+  });
+
+  if (loading) {
+    return <BoardSkeleton />;
+  }
+
+  return (
+    <div>
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50" data-testid="page-title">
+            보드
+          </h2>
+          <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
+            {(["board", "calendar", "my-tasks"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-sm font-medium",
+                  activeTab === tab
+                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
+                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"
+                )}
+              >
+                {tab === "board" ? "전체 보드" : tab === "calendar" ? "캘린더" : "내 할일"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button
+          onClick={openCreateModal}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          data-testid="create-issue-btn"
+        >
+          <Plus size={16} />
+          새 이슈
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-950/30 dark:text-red-400">
+          {error}
+          <button onClick={loadIssues} className="ml-2 underline">
+            재시도
+          </button>
+        </div>
+      )}
+
+      {activeTab === "board" ? (
+        <>
+          <IssueFilters
+            search={search}
+            onSearchChange={setSearch}
+            priorityFilter={priorityFilter}
+            onPriorityChange={setPriorityFilter}
+            assigneeFilter={assigneeFilter}
+            onAssigneeChange={setAssigneeFilter}
+            assignees={assignees}
+          />
+
+          <KanbanBoard
+            issues={filteredIssues}
+            onMove={handleMove}
+            onCardClick={handleCardClick}
+            subtaskCounts={subtaskCounts}
+            linkCounts={linkCounts}
+          />
+        </>
+      ) : activeTab === "calendar" ? (
+        <CalendarBoard issues={filteredIssues} onIssueClick={handleCardClick} />
+      ) : (
+        currentUserId ? (
+          <MyTasks
+            userId={currentUserId}
+            users={users}
+            onIssueClick={(issueId) => {
+              const issue = issues.find((i) => i.id === issueId);
+              if (issue) handleCardClick(issue);
+            }}
+          />
+        ) : (
+          <p className="text-sm text-zinc-500">로그인이 필요합니다</p>
+        )
+      )}
+
+      <IssueModal
+        issue={editingIssue}
+        open={modalOpen}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingIssue(null);
+        }}
+        onSave={handleSave}
+        onDelete={handleDelete}
+        users={users}
+      />
+    </div>
+  );
+}
+
+
+======================================================================
+// 파일: src/app/(dashboard)/dashboard/page.tsx
+======================================================================
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { Card } from "@/components/ui/card";
+import { supabase } from "@/lib/supabase";
+import { Plus, Video, Clock, CalendarDays, List, Loader2, X, Trash2 } from "lucide-react";
+import { EventCalendar } from "@/components/calendar/event-calendar";
+import type { CalendarEvent } from "@/components/calendar/event-calendar";
+
+interface Meeting {
+  id: string;
+  title: string;
+  room_name: string;
+  status: string;
+}
+
+export default function DashboardPage() {
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [viewMode, setViewMode] = useState<"calendar" | "list">("calendar");
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userName, setUserName] = useState("");
+
+  // 수정 모달
+  const [editEvent, setEditEvent] = useState<CalendarEvent | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // 새 일정 / 수정 폼
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    startDate: "",
+    startTime: "09:00",
+    endDate: "",
+    endTime: "10:00",
+    allDay: false,
+    color: "#3b82f6",
+    meetingRoomName: "",
+  });
+
+  const resetForm = () => setForm({
+    title: "", description: "", startDate: "", startTime: "09:00", endDate: "", endTime: "10:00",
+    allDay: false, color: "#3b82f6", meetingRoomName: "",
+  });
+
+  const fetchEvents = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("events")
+      .select("*")
+      .order("start_at", { ascending: true });
+    if (error) { setLoading(false); return; }
+    if (data) setEvents(data);
+    setLoading(false);
+  }, []);
+
+  const fetchMeetings = useCallback(async () => {
+    const { data } = await supabase
+      .from("meetings")
+      .select("id, title, room_name, status")
+      .in("status", ["waiting", "active"])
+      .order("created_at", { ascending: false });
+    if (data) setMeetings(data);
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUserId(user.id);
+        setUserName(user.user_metadata?.full_name ?? user.email ?? "");
+      }
+    });
+    fetchEvents();
+    fetchMeetings();
+  }, [fetchEvents, fetchMeetings]);
+
+  function buildTimestamp(date: string, time: string): string {
+    return new Date(`${date}T${time}`).toISOString();
+  }
+
+  const createEvent = async () => {
+    if (!form.title.trim() || !form.startDate || !form.endDate || !userId) return;
+    setSaving(true);
+
+    const startAt = buildTimestamp(form.startDate, form.allDay ? "00:00" : form.startTime);
+    const endAt = buildTimestamp(form.endDate, form.allDay ? "23:59" : form.endTime);
+
+    const { error } = await supabase.from("events").insert({
+      title: form.title.trim(),
+      description: form.description.trim(),
+      start_at: startAt,
+      end_at: endAt,
+      all_day: form.allDay,
+      color: form.color,
+      meeting_room_name: form.meetingRoomName || null,
+      created_by: userId,
+      created_by_name: userName,
+    });
+
+    if (!error) {
+      await createNotificationForAll(
+        `새 일정: ${form.title.trim()}`,
+        `${userName}님이 일정을 등록했습니다. ${formatDateTime(startAt)}`,
+        form.meetingRoomName ? `/settings?join=${form.meetingRoomName}` : "/dashboard"
+      );
+      resetForm();
+      setShowCreate(false);
+      fetchEvents();
+    }
+    setSaving(false);
+  };
+
+  const updateEvent = async () => {
+    if (!editEvent || !form.title.trim() || !form.startDate || !form.endDate) return;
+    setSaving(true);
+
+    const startAt = buildTimestamp(form.startDate, form.allDay ? "00:00" : form.startTime);
+    const endAt = buildTimestamp(form.endDate, form.allDay ? "23:59" : form.endTime);
+
+    const { error } = await supabase.from("events").update({
+      title: form.title.trim(),
+      description: form.description.trim(),
+      start_at: startAt,
+      end_at: endAt,
+      all_day: form.allDay,
+      color: form.color,
+      meeting_room_name: form.meetingRoomName || null,
+    }).eq("id", editEvent.id);
+
+    if (error) { alert(`일정 수정 실패: ${error.message}`); setSaving(false); return; }
+
+    setEditEvent(null);
+    resetForm();
+    fetchEvents();
+    setSaving(false);
+  };
+
+  const deleteEvent = async (id: string) => {
+    if (!window.confirm("일정을 삭제하시겠습니까?")) return;
+    const { error } = await supabase.from("events").delete().eq("id", id);
+    if (error) { alert(`삭제 실패: ${error.message}`); return; }
+    setEditEvent(null);
+    resetForm();
+    setEvents((prev) => prev.filter((e) => e.id !== id));
+  };
+
+  const openEditModal = (ev: CalendarEvent) => {
+    const start = new Date(ev.start_at);
+    const end = new Date(ev.end_at);
+    setForm({
+      title: ev.title,
+      description: ev.description || "",
+      startDate: toDateStr(start),
+      startTime: toTimeStr(start),
+      endDate: toDateStr(end),
+      endTime: toTimeStr(end),
+      allDay: ev.all_day,
+      color: ev.color,
+      meetingRoomName: ev.meeting_room_name || "",
+    });
+    setEditEvent(ev);
+  };
+
+  // 오늘 & 이번주 일정
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const weekEnd = new Date(now);
+  weekEnd.setDate(weekEnd.getDate() + 7);
+
+  const todayEvents = events.filter((e) => {
+    const d = new Date(e.start_at);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` === todayStr;
+  });
+  const weekEvents = events.filter((e) => {
+    const d = new Date(e.start_at);
+    return d >= now && d <= weekEnd;
+  });
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50" data-testid="page-title">일정 관리</h2>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-700">
+            <button
+              onClick={() => setViewMode("calendar")}
+              className={`flex items-center gap-1 px-3 py-1.5 text-xs ${viewMode === "calendar" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 dark:text-zinc-400"} rounded-l-lg`}
+            >
+              <CalendarDays size={14} /> 캘린더
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              className={`flex items-center gap-1 px-3 py-1.5 text-xs ${viewMode === "list" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 dark:text-zinc-400"} rounded-r-lg`}
+            >
+              <List size={14} /> 리스트
+            </button>
+          </div>
+          <button
+            onClick={() => { resetForm(); setShowCreate(true); setEditEvent(null); }}
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Plus size={16} /> 새 일정
+          </button>
+        </div>
+      </div>
+
+      {/* 일정 생성/수정 폼 */}
+      {(showCreate || editEvent) && (
+        <Card className="mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              {editEvent ? "일정 수정" : "새 일정 만들기"}
+            </h3>
+            <button onClick={() => { setShowCreate(false); setEditEvent(null); resetForm(); }} className="p-1 text-zinc-400 hover:text-zinc-600">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <input
+                type="text"
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                placeholder="일정 제목"
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">시작일</label>
+              <input
+                type="date"
+                value={form.startDate}
+                onChange={(e) => setForm({ ...form, startDate: e.target.value, endDate: form.endDate || e.target.value })}
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">종료일</label>
+              <input
+                type="date"
+                value={form.endDate}
+                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </div>
+            {!form.allDay && (
+              <>
+                <div>
+                  <label className="mb-1 block text-xs text-zinc-500">시작 시간</label>
+                  <input
+                    type="time"
+                    value={form.startTime}
+                    onChange={(e) => setForm({ ...form, startTime: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-zinc-500">종료 시간</label>
+                  <input
+                    type="time"
+                    value={form.endTime}
+                    onChange={(e) => setForm({ ...form, endTime: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  />
+                </div>
+              </>
+            )}
+            <div className="sm:col-span-2">
+              <textarea
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                placeholder="설명 (선택)"
+                rows={2}
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">회의 연결 (선택)</label>
+              <select
+                value={form.meetingRoomName}
+                onChange={(e) => setForm({ ...form, meetingRoomName: e.target.value })}
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              >
+                <option value="">회의 없음</option>
+                {meetings.map((m) => (
+                  <option key={m.id} value={m.room_name}>{m.title}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">색상</label>
+              <div className="flex items-center gap-2">
+                {["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"].map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setForm({ ...form, color: c })}
+                    className={`h-7 w-7 rounded-full border-2 ${form.color === c ? "border-zinc-900 dark:border-white" : "border-transparent"}`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+              <input type="checkbox" checked={form.allDay} onChange={(e) => setForm({ ...form, allDay: e.target.checked })} />
+              종일
+            </label>
+            <div className="flex-1" />
+            {editEvent && editEvent.created_by === userId && (
+              <button
+                onClick={() => deleteEvent(editEvent.id)}
+                className="flex items-center gap-1 rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+              >
+                <Trash2 size={14} /> 삭제
+              </button>
+            )}
+            <button
+              onClick={editEvent ? updateEvent : createEvent}
+              disabled={!form.title.trim() || !form.startDate || !form.endDate || saving}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? <><Loader2 size={14} className="animate-spin" /> 저장 중...</> : editEvent ? "수정" : "만들기"}
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="animate-spin text-zinc-400" size={32} />
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+          <div>
+            {viewMode === "calendar" ? (
+              <Card>
+                <EventCalendar events={events} onEventClick={openEditModal} />
+              </Card>
+            ) : (
+              <Card>
+                <h3 className="mb-3 text-sm font-semibold text-zinc-500">전체 일정</h3>
+                {events.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-zinc-400">등록된 일정이 없습니다</p>
+                ) : (
+                  <div className="space-y-2">
+                    {events.map((ev) => (
+                      <EventListItem key={ev.id} event={ev} userId={userId} onClick={() => openEditModal(ev)} />
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+          </div>
+
+          {/* 사이드바 */}
+          <div className="space-y-4">
+            <Card>
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                <Clock size={14} /> 오늘 일정
+              </h3>
+              {todayEvents.length === 0 ? (
+                <p className="text-xs text-zinc-400">오늘 일정이 없습니다</p>
+              ) : (
+                <div className="space-y-2">
+                  {todayEvents.map((ev) => (
+                    <MiniEventItem key={ev.id} event={ev} onClick={() => openEditModal(ev)} />
+                  ))}
+                </div>
+              )}
+            </Card>
+            <Card>
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                <CalendarDays size={14} /> 이번주 일정
+              </h3>
+              {weekEvents.length === 0 ? (
+                <p className="text-xs text-zinc-400">이번주 일정이 없습니다</p>
+              ) : (
+                <div className="space-y-2">
+                  {weekEvents.map((ev) => (
+                    <MiniEventItem key={ev.id} event={ev} onClick={() => openEditModal(ev)} />
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EventListItem({ event, userId, onClick }: { event: CalendarEvent; userId: string | null; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="flex w-full items-center gap-3 rounded-lg border border-zinc-100 p-3 text-left hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50">
+      <div className="h-10 w-1 rounded-full" style={{ backgroundColor: event.color }} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50 truncate">{event.title}</p>
+          {event.meeting_room_name && (
+            <span className="flex items-center gap-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+              <Video size={10} /> 회의
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-zinc-500">
+          {formatDateTime(event.start_at)} ~ {formatDateTime(event.end_at)}
+        </p>
+        {event.description && <p className="mt-1 text-xs text-zinc-400 truncate">{event.description}</p>}
+      </div>
+    </button>
+  );
+}
+
+function MiniEventItem({ event, onClick }: { event: CalendarEvent; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="flex w-full items-center gap-2 rounded p-1 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800">
+      <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: event.color }} />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate">{event.title}</p>
+        <p className="text-[10px] text-zinc-400">{formatTime(event.start_at)}</p>
+      </div>
+      {event.meeting_room_name && (
+        <Video size={12} className="text-blue-500 shrink-0" />
+      )}
+    </button>
+  );
+}
+
+function formatDateTime(dt: string): string {
+  return new Date(dt).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatTime(dt: string): string {
+  return new Date(dt).toLocaleString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function toTimeStr(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+async function createNotificationForAll(title: string, body: string, link: string) {
+  const { data: profiles } = await supabase.from("profiles").select("id");
+  if (!profiles) return;
+  const notifications = profiles.map((p) => ({
+    user_id: p.id,
+    title,
+    body,
+    link,
+  }));
+  await supabase.from("notifications").insert(notifications);
+}
+
+
+======================================================================
+// 파일: src/app/(dashboard)/graph/page.tsx
+======================================================================
+"use client";
+
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { GraphSearch } from "@/components/graph/graph-search";
+import { useToast } from "@/components/ui/toast";
+import { GraphSkeleton } from "@/components/skeletons/graph-skeleton";
+import { Card } from "@/components/ui/card";
+import { supabase } from "@/lib/supabase";
+import { Plus, X, Loader2, Users, User } from "lucide-react";
+import dynamic from "next/dynamic";
+import type { GraphData, GraphNode } from "@/types/graph";
+
+const G6Graph = dynamic(() => import("@/components/graph/g6-graph"), { ssr: false });
+
+const EMPTY_DATA: GraphData = { nodes: [], links: [] };
+
+const NODE_TYPE_CONFIG: Record<string, { label: string; color: string; emoji: string }> = {
+  person: { label: "사람", color: "#3b82f6", emoji: "👤" },
+  skill: { label: "스킬", color: "#10b981", emoji: "⚡" },
+  project: { label: "프로젝트", color: "#f59e0b", emoji: "📁" },
+  education: { label: "교육", color: "#8b5cf6", emoji: "🎓" },
+  certificate: { label: "자격증", color: "#ef4444", emoji: "📜" },
+  document: { label: "문서", color: "#ec4899", emoji: "📄" },
+  role: { label: "역할", color: "#06b6d4", emoji: "💼" },
+  tool: { label: "도구", color: "#64748b", emoji: "🔧" },
+};
+
+const ADD_TYPES = ["skill", "project", "education", "certificate", "document", "role", "tool"] as const;
+const SKILL_CATEGORIES = ["AI/ML", "프로그래밍", "디자인", "기획/관리", "인프라/DevOps", "산업/도메인", "데이터분석", "마케팅", "영업/커뮤니케이션", "기타"];
+
+const META_LABELS: Record<string, string> = {
+  category: "카테고리", level: "수준", tech: "기술스택", status: "상태",
+  description: "설명", provider: "교육기관", issuer: "발급기관", date: "날짜",
+  hours: "시간(h)", department: "부서", email: "이메일", type: "유형",
+  degree: "학위", gender: "성별", age: "나이", bio: "소개",
+};
+const LEVEL_LABELS: Record<string, string> = { high: "상", medium: "중", low: "하" };
+
+export default function GraphPage() {
+  const [graphData, setGraphData] = useState<GraphData>(EMPTY_DATA);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [search, setSearch] = useState("");
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userName, setUserName] = useState("");
+  const { showToast } = useToast();
+
+  // 뷰 모드: 내 프로필 vs 전체
+  const [viewAll, setViewAll] = useState(true);
+
+  // 추가 모달
+  const [showAdd, setShowAdd] = useState(false);
+  const [addType, setAddType] = useState<string>("skill");
+  const [addForm, setAddForm] = useState<Record<string, string>>({});
+  const [adding, setAdding] = useState(false);
+
+  // 프로필 편집
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({ degree: "", gender: "", age: "", bio: "" });
+
+  // 필터
+  const [filters, setFilters] = useState<Record<string, boolean>>(() => {
+    const f: Record<string, boolean> = {};
+    for (const key of Object.keys(NODE_TYPE_CONFIG)) f[key] = true;
+    return f;
+  });
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUserId(user.id);
+        setUserName(user.user_metadata?.full_name ?? user.email ?? "");
+        fetch("/api/graph", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "ensurePerson",
+            data: { userId: user.id, name: user.user_metadata?.full_name ?? user.email ?? "", email: user.email, avatarUrl: user.user_metadata?.avatar_url },
+          }),
+        }).catch((err) => console.error("Person 노드 생성 실패:", err));
+      }
+    });
+  }, []);
+
+  const fetchGraph = useCallback(async () => {
+    try {
+      const res = await fetch("/api/graph", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data: GraphData = await res.json();
+      setGraphData(data);
+      setError(null);
+    } catch {
+      setError("그래프 데이터를 불러올 수 없습니다");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchGraph(); }, [fetchGraph]);
+
+  // 필터 + 뷰 모드 적용
+  const filteredData = useMemo<GraphData>(() => {
+    let nodes = graphData.nodes.filter((n) => filters[n.type] !== false);
+
+    // 내 프로필만 보기
+    if (!viewAll && userId) {
+      const myPersonNode = graphData.nodes.find((n) => n.type === "person" && n.meta?.userId === userId);
+      if (myPersonNode) {
+        const connectedIds = new Set<string>();
+        connectedIds.add(myPersonNode.id);
+        for (const l of graphData.links) {
+          const src = typeof l.source === "string" ? l.source : (l.source as any).id;
+          const tgt = typeof l.target === "string" ? l.target : (l.target as any).id;
+          if (src === myPersonNode.id) connectedIds.add(tgt);
+          if (tgt === myPersonNode.id) connectedIds.add(src);
+        }
+        nodes = nodes.filter((n) => connectedIds.has(n.id));
+      }
+    }
+
+    // 검색 필터
+    if (search) {
+      const q = search.toLowerCase();
+      const matchIds = new Set(nodes.filter((n) => n.name.toLowerCase().includes(q)).map((n) => n.id));
+      // 매칭 노드 + 연결된 노드
+      for (const l of graphData.links) {
+        const src = typeof l.source === "string" ? l.source : (l.source as any).id;
+        const tgt = typeof l.target === "string" ? l.target : (l.target as any).id;
+        if (matchIds.has(src)) matchIds.add(tgt);
+        if (matchIds.has(tgt)) matchIds.add(src);
+      }
+      nodes = nodes.filter((n) => matchIds.has(n.id));
+    }
+
+    const nodeIds = new Set(nodes.map((n) => n.id));
+    const links = graphData.links.filter((l) => {
+      const src = typeof l.source === "string" ? l.source : (l.source as any).id;
+      const tgt = typeof l.target === "string" ? l.target : (l.target as any).id;
+      return nodeIds.has(src) && nodeIds.has(tgt);
+    });
+
+    return { nodes, links };
+  }, [graphData, filters, viewAll, userId, search]);
+
+  // 노드 추가
+  const handleAdd = async () => {
+    if (!userId) return;
+    setAdding(true);
+    const actionMap: Record<string, string> = {
+      skill: "addSkill", project: "addProject", education: "addEducation",
+      certificate: "addCertificate", document: "addDocument", role: "addRole", tool: "addTool",
+    };
+    const dataMap: Record<string, Record<string, any>> = {
+      skill: { userId, skillName: addForm.name, category: addForm.category, level: addForm.level || "medium" },
+      project: { userId, name: addForm.name, type: addForm.type, tech: addForm.tech, status: addForm.status || "active", description: addForm.description },
+      education: { userId, name: addForm.name, provider: addForm.provider, date: addForm.date, category: addForm.category, hours: parseInt(addForm.hours || "0") },
+      certificate: { userId, name: addForm.name, issuer: addForm.issuer, date: addForm.date, category: addForm.category },
+      document: { userId, name: addForm.name, type: addForm.type, date: addForm.date, description: addForm.description },
+      role: { userId, name: addForm.name, department: addForm.department },
+      tool: { userId, name: addForm.name, category: addForm.category, description: addForm.description },
+    };
+    try {
+      const res = await fetch("/api/graph", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: actionMap[addType], data: dataMap[addType] }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      showToast(`${NODE_TYPE_CONFIG[addType]?.label} 추가 완료`);
+      setShowAdd(false); setAddForm({});
+      fetchGraph();
+    } catch { showToast("추가 실패"); }
+    finally { setAdding(false); }
+  };
+
+  // 프로필 저장
+  const saveProfile = async () => {
+    if (!userId) return;
+    try {
+      const res = await fetch("/api/graph", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "updatePerson", data: { userId, ...profileForm } }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      showToast("프로필 저장 완료");
+      setShowProfile(false);
+      fetchGraph();
+    } catch {
+      showToast("프로필 저장 실패");
+    }
+  };
+
+  // 통계
+  const stats = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const n of graphData.nodes) counts[n.type] = (counts[n.type] || 0) + 1;
+    return counts;
+  }, [graphData]);
+
+  if (loading) return <GraphSkeleton />;
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50" data-testid="page-title">SW 역량 프로필</h2>
+        <div className="flex items-center gap-2">
+          <GraphSearch value={search} onChange={setSearch} />
+          {/* 전체/내 프로필 토글 */}
+          <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-700">
+            <button
+              onClick={() => setViewAll(true)}
+              className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-l-lg ${viewAll ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 dark:text-zinc-400"}`}
+            >
+              <Users size={14} /> 전체
+            </button>
+            <button
+              onClick={() => setViewAll(false)}
+              className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-r-lg ${!viewAll ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 dark:text-zinc-400"}`}
+            >
+              <User size={14} /> 내 프로필
+            </button>
+          </div>
+          <button onClick={() => setShowProfile(true)} className="rounded-lg border border-zinc-200 px-3 py-2 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
+            프로필 편집
+          </button>
+          <button onClick={() => { setShowAdd(true); setAddForm({}); setAddType("skill"); }} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+            <Plus size={16} /> 역량 추가
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-950/30 dark:text-red-400">
+          {error} <button onClick={() => window.location.reload()} className="ml-2 underline">재시도</button>
+        </div>
+      )}
+
+      {/* 프로필 편집 */}
+      {showProfile && (
+        <Card className="mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">내 프로필 편집</h3>
+            <button onClick={() => setShowProfile(false)} className="p-1 text-zinc-400 hover:text-zinc-600"><X size={18} /></button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">학위</label>
+              <select value={profileForm.degree} onChange={(e) => setProfileForm({ ...profileForm, degree: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+                <option value="">선택</option>
+                <option value="고졸">고졸</option>
+                <option value="전문학사">전문학사</option>
+                <option value="학사">학사</option>
+                <option value="석사">석사</option>
+                <option value="박사">박사</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">성별</label>
+              <select value={profileForm.gender} onChange={(e) => setProfileForm({ ...profileForm, gender: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+                <option value="">선택</option>
+                <option value="남">남</option>
+                <option value="여">여</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">나이</label>
+              <input type="number" value={profileForm.age} onChange={(e) => setProfileForm({ ...profileForm, age: e.target.value })} placeholder="나이" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">한줄 소개</label>
+              <input type="text" value={profileForm.bio} onChange={(e) => setProfileForm({ ...profileForm, bio: e.target.value })} placeholder="AI 개발자" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+            </div>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <button onClick={saveProfile} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">저장</button>
+          </div>
+        </Card>
+      )}
+
+      {/* 역량 추가 */}
+      {showAdd && (
+        <Card className="mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">역량 추가</h3>
+            <button onClick={() => setShowAdd(false)} className="p-1 text-zinc-400 hover:text-zinc-600"><X size={18} /></button>
+          </div>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {ADD_TYPES.map((t) => (
+              <button key={t} onClick={() => { setAddType(t); setAddForm({}); }}
+                className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${addType === t ? "text-white" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"}`}
+                style={addType === t ? { backgroundColor: NODE_TYPE_CONFIG[t].color } : {}}
+              >
+                {NODE_TYPE_CONFIG[t].emoji} {NODE_TYPE_CONFIG[t].label}
+              </button>
+            ))}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className={addType === "skill" ? "" : "sm:col-span-2"}>
+              <input type="text" value={addForm.name || ""} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder={`${NODE_TYPE_CONFIG[addType].label} 이름`} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+            </div>
+            {addType === "skill" && (<>
+              <select value={addForm.category || ""} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+                <option value="">카테고리</option>
+                {SKILL_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={addForm.level || "medium"} onChange={(e) => setAddForm({ ...addForm, level: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+                <option value="high">상</option><option value="medium">중</option><option value="low">하</option>
+              </select>
+            </>)}
+            {addType === "project" && (<>
+              <input type="text" value={addForm.tech || ""} onChange={(e) => setAddForm({ ...addForm, tech: e.target.value })} placeholder="기술 스택" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+              <input type="text" value={addForm.description || ""} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} placeholder="설명" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+            </>)}
+            {addType === "education" && (<>
+              <input type="text" value={addForm.provider || ""} onChange={(e) => setAddForm({ ...addForm, provider: e.target.value })} placeholder="교육기관" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+              <input type="text" value={addForm.date || ""} onChange={(e) => setAddForm({ ...addForm, date: e.target.value })} placeholder="수료일 (2026-03)" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+              <select value={addForm.category || ""} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+                <option value="">카테고리</option>{SKILL_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <input type="number" value={addForm.hours || ""} onChange={(e) => setAddForm({ ...addForm, hours: e.target.value })} placeholder="교육시간" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+            </>)}
+            {addType === "certificate" && (<>
+              <input type="text" value={addForm.issuer || ""} onChange={(e) => setAddForm({ ...addForm, issuer: e.target.value })} placeholder="발급기관" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+              <input type="text" value={addForm.date || ""} onChange={(e) => setAddForm({ ...addForm, date: e.target.value })} placeholder="취득일 (2026-03)" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+            </>)}
+            {addType === "document" && (<>
+              <select value={addForm.type || ""} onChange={(e) => setAddForm({ ...addForm, type: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+                <option value="">유형</option><option value="proposal">제안서</option><option value="design">설계서</option><option value="report">보고서</option><option value="manual">매뉴얼</option><option value="code">코드</option><option value="other">기타</option>
+              </select>
+              <input type="text" value={addForm.description || ""} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} placeholder="설명" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+            </>)}
+            {addType === "role" && (
+              <input type="text" value={addForm.department || ""} onChange={(e) => setAddForm({ ...addForm, department: e.target.value })} placeholder="부서/팀" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+            )}
+            {addType === "tool" && (<>
+              <select value={addForm.category || ""} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+                <option value="">분류</option><option value="AI">AI</option><option value="IDE">IDE</option><option value="디자인">디자인</option><option value="협업">협업</option><option value="BaaS">BaaS</option><option value="배포">배포</option><option value="기타">기타</option>
+              </select>
+              <input type="text" value={addForm.description || ""} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} placeholder="설명" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+            </>)}
+          </div>
+          <div className="mt-3 flex justify-end">
+            <button onClick={handleAdd} disabled={!addForm.name?.trim() || adding} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+              {adding ? <Loader2 size={14} className="animate-spin" /> : null} 추가
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {/* 필터 */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {Object.entries(NODE_TYPE_CONFIG).map(([key, cfg]) => (
+          <button key={key} onClick={() => setFilters((f) => ({ ...f, [key]: !f[key] }))}
+            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-opacity ${filters[key] ? "" : "opacity-30"}`}
+            style={{ backgroundColor: cfg.color + "20", color: cfg.color }}
+          >
+            {cfg.emoji} {cfg.label} {stats[key] ? `(${stats[key]})` : ""}
+          </button>
+        ))}
+      </div>
+
+      {/* 그래프 + 상세 패널 */}
+      <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+        <div className="relative overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900" style={{ height: "calc(100vh - 340px)", minHeight: 400 }}>
+          {filteredData.nodes.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-zinc-400">
+              <p>프로필 데이터가 없습니다</p>
+              <p className="text-xs">&quot;역량 추가&quot; 버튼으로 스킬, 프로젝트 등을 추가하세요</p>
+            </div>
+          ) : (
+            <G6Graph data={filteredData} onNodeClick={setSelectedNode} filterUserId={viewAll ? null : userId} />
+          )}
+        </div>
+
+        {/* 상세 패널 */}
+        <div>
+          {selectedNode ? (
+            <Card>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">{NODE_TYPE_CONFIG[selectedNode.type]?.emoji ?? "📌"}</span>
+                  <span className="text-xs font-medium text-zinc-400">{NODE_TYPE_CONFIG[selectedNode.type]?.label ?? selectedNode.type}</span>
+                </div>
+                <button onClick={() => setSelectedNode(null)} className="rounded p-1 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"><X size={16} /></button>
+              </div>
+              <h3 className="mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-50">{selectedNode.name}</h3>
+              {selectedNode.meta && (
+                <dl className="space-y-1.5">
+                  {Object.entries(selectedNode.meta).filter(([k, v]) => !["name", "userId", "avatarUrl", "elementId", "nodeType", "originalNode", "shared"].includes(k) && v !== undefined && v !== "").map(([key, value]) => (
+                    <div key={key} className="flex items-baseline gap-2 text-sm">
+                      <dt className="min-w-[60px] font-medium text-zinc-500 dark:text-zinc-400">{META_LABELS[key] ?? key}</dt>
+                      <dd className="text-zinc-900 dark:text-zinc-100">{key === "level" ? LEVEL_LABELS[String(value)] ?? value : String(value)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </Card>
+          ) : (
+            <Card>
+              <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">역량 요약</h3>
+              <div className="space-y-2">
+                {Object.entries(NODE_TYPE_CONFIG).map(([key, cfg]) => {
+                  if (!stats[key]) return null;
+                  return (
+                    <div key={key} className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: cfg.color }} />{cfg.label}
+                      </span>
+                      <span className="font-medium text-zinc-900 dark:text-zinc-100">{stats[key]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                <p className="text-[10px] text-zinc-400">💡 노드를 클릭하면 상세 정보가 표시됩니다</p>
+                <p className="text-[10px] text-zinc-400 mt-1">🟡 노란 테두리 = 여러 사람이 공유하는 역량</p>
+              </div>
+            </Card>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+======================================================================
+// 파일: src/app/(dashboard)/layout.tsx
+======================================================================
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Sidebar } from "@/components/layout/sidebar";
+import { Header } from "@/components/layout/header";
+import { ToastProvider } from "@/components/ui/toast";
+import { DashboardSkeleton } from "@/components/skeletons/dashboard-skeleton";
+import { getSession, onAuthStateChange } from "@/lib/auth";
+import type { Session } from "@supabase/supabase-js";
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getSession().then(async (s) => {
+      if (!mounted) return;
+      if (s) {
+        setSession(s);
+        setLoading(false);
+      } else {
+        await new Promise((r) => setTimeout(r, 1000));
+        if (!mounted) return;
+        const retry = await getSession().catch(() => null);
+        if (retry) {
+          setSession(retry);
+          setLoading(false);
+        } else {
+          const currentPath = window.location.pathname;
+          router.replace(`/login?redirect=${encodeURIComponent(currentPath)}`);
+          setLoading(false);
+        }
+      }
+    });
+
+    const { data: { subscription } } = onAuthStateChange((s) => {
+      if (!mounted) return;
+      if (s) {
+        setSession(s);
+        setLoading(false);
+      } else if (!loading) {
+        router.replace("/login");
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  if (loading) {
+    return <DashboardSkeleton />;
+  }
+
+  if (!session) return null;
+
+  return (
+    <ToastProvider>
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+        <Sidebar />
+        <div className="lg:pl-64">
+          <Header />
+          <main className="p-6" data-testid="main-content">
+            {children}
+          </main>
+        </div>
+      </div>
+    </ToastProvider>
+  );
+}
+
+
+======================================================================
+// 파일: src/app/(dashboard)/qr-cards/page.tsx
+======================================================================
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { QrCode, Download, Plus, Trash2, Eye, Globe, X, Camera } from "lucide-react";
+import QRCode from "qrcode";
+import { useToast } from "@/components/ui/toast";
+import type { CardProfile } from "@/types/card-profile";
+import {
+  generateVCard,
+  generateUniqueId,
+  fetchCardProfiles,
+  createCardProfile,
+  deleteCardProfile,
+} from "@/lib/card-profiles";
+import { supabase } from "@/lib/supabase";
+
+export default function QrCardsPage() {
+  const [profiles, setProfiles] = useState<CardProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedProfile, setSelectedProfile] = useState<CardProfile | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [formName, setFormName] = useState("");
+  const [formEmail, setFormEmail] = useState("");
+  const [formPhone, setFormPhone] = useState("");
+  const [formWebsites, setFormWebsites] = useState<string[]>([""]);
+  const [formImage, setFormImage] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { showToast } = useToast();
+
+  useEffect(() => {
+    fetchCardProfiles().then((data) => {
+      setProfiles(data);
+      setLoading(false);
+    });
+  }, []);
+
+  async function handleSelectProfile(profile: CardProfile) {
+    setSelectedProfile(profile);
+    const vcard = generateVCard(profile);
+    try {
+      const dataUrl = await QRCode.toDataURL(vcard, {
+        width: 280, margin: 2, color: { dark: "#1e40af", light: "#ffffff" },
+      });
+      setQrDataUrl(dataUrl);
+    } catch {
+      setQrDataUrl("");
+    }
+  }
+
+  function handleDownloadVCard(profile: CardProfile) {
+    const vcard = generateVCard(profile);
+    const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${profile.name}.vcf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleDownloadQr() {
+    if (!qrDataUrl || !selectedProfile) return;
+    const a = document.createElement("a");
+    a.href = qrDataUrl;
+    a.download = `qr-${selectedProfile.name}.png`;
+    a.click();
+  }
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 500 * 1024) {
+      showToast("이미지는 500KB 이하만 가능합니다.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setFormImage(reader.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  async function handleAddProfile() {
+    if (!formName || !formEmail || !formPhone) return;
+    const websites = formWebsites.filter((w) => w.trim() !== "");
+
+    // 현재 사용자 ID 가져오기
+    const { data: { user } } = await supabase.auth.getUser();
+
+    try {
+      const created = await createCardProfile({
+        user_id: user?.id ?? "",
+        unique_id: generateUniqueId(formName),
+        name: formName,
+        email: formEmail,
+        phone: formPhone,
+        websites,
+        image: formImage || undefined,
+      });
+      setProfiles((prev) => [created, ...prev]);
+      resetForm();
+      handleSelectProfile(created);
+      showToast("명함이 등록되었습니다", "success");
+    } catch {
+      showToast("명함 등록에 실패했습니다");
+    }
+  }
+
+  function resetForm() {
+    setFormName("");
+    setFormEmail("");
+    setFormPhone("");
+    setFormWebsites([""]);
+    setFormImage("");
+    setShowForm(false);
+  }
+
+  async function handleDeleteProfile(id: string) {
+    if (!confirm("이 명함을 삭제하시겠습니까?")) return;
+    try {
+      await deleteCardProfile(id);
+      setProfiles((prev) => prev.filter((p) => p.id !== id));
+      if (selectedProfile?.id === id) {
+        setSelectedProfile(null);
+        setQrDataUrl("");
+      }
+      showToast("명함이 삭제되었습니다", "success");
+    } catch {
+      showToast("명함 삭제에 실패했습니다");
+    }
+  }
+
+  function updateWebsite(index: number, value: string) {
+    const updated = [...formWebsites];
+    updated[index] = value;
+    setFormWebsites(updated);
+  }
+
+  function addWebsiteField() {
+    setFormWebsites([...formWebsites, ""]);
+  }
+
+  function removeWebsiteField(index: number) {
+    if (formWebsites.length <= 1) {
+      setFormWebsites([""]);
+      return;
+    }
+    setFormWebsites(formWebsites.filter((_, i) => i !== index));
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50" data-testid="page-title">QR 명함</h1>
+          <p className="text-sm text-zinc-500 mt-1">QR코드로 명함을 공유하세요</p>
+        </div>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          data-testid="add-card-btn"
+        >
+          <Plus size={16} />
+          명함 추가
+        </button>
+      </div>
+
+      {/* 명함 추가 폼 */}
+      {showForm && (
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950" data-testid="card-form">
+          <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 mb-4">새 명함 등록</h3>
+
+          {/* 이미지 업로드 */}
+          <div className="flex items-center gap-4 mb-4">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="relative flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed border-zinc-300 hover:border-blue-400 transition-colors overflow-hidden shrink-0 dark:border-zinc-600"
+            >
+              {formImage ? (
+                <img src={formImage} alt="미리보기" className="h-full w-full object-cover" />
+              ) : (
+                <Camera size={20} className="text-zinc-400" />
+              )}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="hidden"
+            />
+            <div className="text-xs text-zinc-500">
+              <p>프로필 이미지 (선택)</p>

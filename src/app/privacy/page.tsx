@@ -1,5 +1,5 @@
 export default function PrivacyPage() {
-  const company = process.env.NEXT_PUBLIC_COMPANY_NAME ?? "The Polestar";
+  const company = process.env.NEXT_PUBLIC_COMPANY_NAME ?? "조이텍";
   const representative = process.env.NEXT_PUBLIC_REPRESENTATIVE ?? "대표자";
 
   return (

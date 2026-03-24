@@ -20,5 +20,5 @@ export const env = {
   KAKAO_REST_API_KEY: getPublicEnv("NEXT_PUBLIC_KAKAO_REST_API_KEY"),
   KAKAO_JS_KEY: getPublicEnv("NEXT_PUBLIC_KAKAO_JS_KEY"),
   JITSI_DOMAIN: getPublicEnv("NEXT_PUBLIC_JITSI_DOMAIN", "meet.systemli.org"),
-  COMPANY_NAME: getPublicEnv("NEXT_PUBLIC_COMPANY_NAME", "The Polestar"),
+  COMPANY_NAME: getPublicEnv("NEXT_PUBLIC_COMPANY_NAME", "조이텍"),
 } as const;

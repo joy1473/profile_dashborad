@@ -75,7 +75,7 @@ export function Sidebar() {
         </nav>
 
         <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-800 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-600">
-          <p>copyright&copy; 2005-{new Date().getFullYear()} {process.env.NEXT_PUBLIC_COMPANY_NAME ?? "The Polestar"}</p>
+          <p>copyright&copy; 2005-{new Date().getFullYear()} {process.env.NEXT_PUBLIC_COMPANY_NAME ?? "조이텍"}</p>
           <p>사업자등록번호 : {process.env.NEXT_PUBLIC_BIZ_REG_NO ?? ""}</p>
           <p>대표자 : {process.env.NEXT_PUBLIC_REPRESENTATIVE ?? ""}</p>
           <p>{process.env.NEXT_PUBLIC_ADDRESS ?? ""}</p>

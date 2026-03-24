@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "The Polestar Dashboard",
+  title: "SaaS Dashboard",
   description: "데이터 시각화 및 관리 대시보드",
   manifest: "/manifest.json",
   themeColor: "#1e40af",

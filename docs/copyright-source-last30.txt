@@ -1,0 +1,1499 @@
+import type { MetricCard, ChartData } from "@/types";
+
+const USE_MOCK = !process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+export async function fetchMetrics(): Promise<MetricCard[]> {
+  if (USE_MOCK) return mockMetrics;
+
+  try {
+    const { data, error } = await supabase
+      .from("daily_metrics")
+      .select("*")
+      .order("date", { ascending: false })
+      .limit(2);
+    if (error || !data || data.length < 2) return mockMetrics;
+
+  const [latest, prev] = data;
+  const pctChange = (curr: number, old: number) =>
+    old === 0 ? 0 : Math.round(((curr - old) / old) * 1000) / 10;
+
+  const revChange = pctChange(latest.revenue, prev.revenue);
+  const userChange = pctChange(latest.active_users, prev.active_users);
+  const convChange = pctChange(Number(latest.conversion_rate), Number(prev.conversion_rate));
+  const sessChange = pctChange(latest.avg_session_seconds, prev.avg_session_seconds);
+
+  return [
+    { title: "총 매출", value: `₩${(latest.revenue * 10000).toLocaleString()}`, change: Math.abs(revChange), trend: revChange >= 0 ? "up" : "down" },
+    { title: "활성 사용자", value: latest.active_users.toLocaleString(), change: Math.abs(userChange), trend: userChange >= 0 ? "up" : "down" },
+    { title: "전환율", value: `${latest.conversion_rate}%`, change: Math.abs(convChange), trend: convChange >= 0 ? "up" : "down" },
+    { title: "평균 세션", value: formatSeconds(latest.avg_session_seconds), change: Math.abs(sessChange), trend: sessChange >= 0 ? "up" : "down" },
+  ];
+  } catch {
+    return mockMetrics;
+  }
+}
+
+export async function fetchRevenueData(): Promise<ChartData[]> {
+  if (USE_MOCK) return mockRevenueData;
+
+  try {
+    const { data, error } = await supabase
+      .from("daily_metrics")
+      .select("date, revenue, active_users")
+      .order("date", { ascending: true });
+    if (error) return mockRevenueData;
+
+  const monthNames = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
+  return (data ?? []).map((d) => ({
+    name: monthNames[new Date(d.date).getMonth()],
+    date: d.date,
+    revenue: d.revenue,
+    users: d.active_users,
+  }));
+  } catch {
+    return mockRevenueData;
+  }
+}
+
+function formatSeconds(s: number): string {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}분 ${sec}초`;
+}
+
+
+======================================================================
+// 파일: src/lib/mock-data.ts
+======================================================================
+import type { User, MetricCard, ChartData, Activity } from "@/types";
+
+export const metrics: MetricCard[] = [
+  { title: "총 매출", value: "₩48,250,000", change: 12.5, trend: "up" },
+  { title: "활성 사용자", value: "2,430", change: 8.2, trend: "up" },
+  { title: "전환율", value: "3.24%", change: -1.8, trend: "down" },
+  { title: "평균 세션", value: "4분 32초", change: 5.1, trend: "up" },
+];
+
+export const revenueData: ChartData[] = [
+  { name: "1월", date: "2025-01-01", revenue: 3200, users: 1800 },
+  { name: "2월", date: "2025-02-01", revenue: 4100, users: 2000 },
+  { name: "3월", date: "2025-03-01", revenue: 3800, users: 2200 },
+  { name: "4월", date: "2025-04-01", revenue: 5200, users: 2400 },
+  { name: "5월", date: "2025-05-01", revenue: 4800, users: 2100 },
+  { name: "6월", date: "2025-06-01", revenue: 6100, users: 2600 },
+  { name: "7월", date: "2025-07-01", revenue: 5900, users: 2430 },
+  { name: "8월", date: "2025-08-01", revenue: 6400, users: 2700 },
+  { name: "9월", date: "2025-09-01", revenue: 5800, users: 2550 },
+  { name: "10월", date: "2025-10-01", revenue: 6900, users: 2850 },
+  { name: "11월", date: "2025-11-01", revenue: 7500, users: 2950 },
+  { name: "12월", date: "2025-12-01", revenue: 7200, users: 3100 },
+];
+
+export const categoryData: ChartData[] = [
+  { name: "직접 유입", value: 35 },
+  { name: "검색 엔진", value: 30 },
+  { name: "소셜 미디어", value: 20 },
+  { name: "이메일", value: 10 },
+  { name: "기타", value: 5 },
+];
+
+export const users: User[] = [
+  { id: "1", name: "김민수", email: "minsu@example.com", role: "admin", status: "active", joinedAt: "2024-01-15" },
+  { id: "2", name: "이지은", email: "jieun@example.com", role: "user", status: "active", joinedAt: "2024-02-20" },
+  { id: "3", name: "박서준", email: "seojun@example.com", role: "user", status: "inactive", joinedAt: "2024-03-10" },
+  { id: "4", name: "최유리", email: "yuri@example.com", role: "viewer", status: "active", joinedAt: "2024-04-05" },
+  { id: "5", name: "정하늘", email: "haneul@example.com", role: "user", status: "active", joinedAt: "2024-05-12" },
+  { id: "6", name: "강도윤", email: "doyun@example.com", role: "admin", status: "active", joinedAt: "2024-06-01" },
+  { id: "7", name: "윤서연", email: "seoyeon@example.com", role: "user", status: "inactive", joinedAt: "2024-07-18" },
+  { id: "8", name: "임재현", email: "jaehyun@example.com", role: "viewer", status: "active", joinedAt: "2024-08-22" },
+];
+
+export const activities: Activity[] = [
+  { id: "1", user: "김민수", action: "새 프로젝트 생성", target: "마케팅 캠페인 Q1", timestamp: "5분 전" },
+  { id: "2", user: "이지은", action: "보고서 다운로드", target: "월간 매출 리포트", timestamp: "12분 전" },
+  { id: "3", user: "박서준", action: "설정 변경", target: "알림 설정", timestamp: "1시간 전" },
+  { id: "4", user: "최유리", action: "팀원 초대", target: "dev@example.com", timestamp: "2시간 전" },
+  { id: "5", user: "정하늘", action: "대시보드 생성", target: "KPI 트래커", timestamp: "3시간 전" },
+];
+
+
+======================================================================
+// 파일: src/lib/mock-graph.ts
+======================================================================
+import type { GraphData } from "@/types/graph";
+
+export const mockGraphData: GraphData = {
+  nodes: [
+    // Users (from mock-data.ts)
+    { id: "user-1", name: "김민수", type: "user", meta: { email: "minsu@example.com", role: "admin", status: "active" } },
+    { id: "user-2", name: "이지은", type: "user", meta: { email: "jieun@example.com", role: "user", status: "active" } },
+    { id: "user-3", name: "박서준", type: "user", meta: { email: "seojun@example.com", role: "user", status: "inactive" } },
+    { id: "user-4", name: "최유리", type: "user", meta: { email: "yuri@example.com", role: "viewer", status: "active" } },
+    { id: "user-5", name: "정하늘", type: "user", meta: { email: "haneul@example.com", role: "user", status: "active" } },
+
+    // Issues (from mock-issues.ts)
+    { id: "issue-1", name: "로그인 페이지 오류 수정", type: "issue", meta: { status: "todo", priority: "high" } },
+    { id: "issue-2", name: "대시보드 차트 반응형 개선", type: "issue", meta: { status: "in_progress", priority: "medium" } },
+    { id: "issue-3", name: "QR 명함 공유 기능", type: "issue", meta: { status: "todo", priority: "medium" } },
+    { id: "issue-4", name: "사용자 목록 페이지네이션", type: "issue", meta: { status: "done", priority: "low" } },
+    { id: "issue-5", name: "다크모드 색상 통일", type: "issue", meta: { status: "done", priority: "low" } },
+    { id: "issue-6", name: "설정 페이지 알림 토글 버그", type: "issue", meta: { status: "in_review", priority: "high" } },
+
+    // Labels
+    { id: "label-bug", name: "bug", type: "label", meta: { color: "#ef4444" } },
+    { id: "label-auth", name: "auth", type: "label", meta: { color: "#8b5cf6" } },
+    { id: "label-ui", name: "ui", type: "label", meta: { color: "#3b82f6" } },
+    { id: "label-responsive", name: "responsive", type: "label", meta: { color: "#06b6d4" } },
+    { id: "label-feature", name: "feature", type: "label", meta: { color: "#22c55e" } },
+    { id: "label-enhancement", name: "enhancement", type: "label", meta: { color: "#f59e0b" } },
+    { id: "label-darkmode", name: "darkmode", type: "label", meta: { color: "#6366f1" } },
+  ],
+  links: [
+    // ASSIGNED_TO (user -> issue)
+    { source: "user-1", target: "issue-1", type: "ASSIGNED_TO" },
+    { source: "user-2", target: "issue-2", type: "ASSIGNED_TO" },
+    { source: "user-4", target: "issue-4", type: "ASSIGNED_TO" },
+    { source: "user-1", target: "issue-5", type: "ASSIGNED_TO" },
+    { source: "user-2", target: "issue-6", type: "ASSIGNED_TO" },
+
+    // CREATED_BY (issue -> user)
+    { source: "issue-1", target: "user-1", type: "CREATED_BY" },
+    { source: "issue-2", target: "user-1", type: "CREATED_BY" },
+    { source: "issue-3", target: "user-1", type: "CREATED_BY" },
+    { source: "issue-4", target: "user-1", type: "CREATED_BY" },
+    { source: "issue-5", target: "user-1", type: "CREATED_BY" },
+    { source: "issue-6", target: "user-1", type: "CREATED_BY" },
+
+    // LABELED_WITH (issue -> label)
+    { source: "issue-1", target: "label-bug", type: "LABELED_WITH" },
+    { source: "issue-1", target: "label-auth", type: "LABELED_WITH" },
+    { source: "issue-2", target: "label-ui", type: "LABELED_WITH" },
+    { source: "issue-2", target: "label-responsive", type: "LABELED_WITH" },
+    { source: "issue-3", target: "label-feature", type: "LABELED_WITH" },
+    { source: "issue-4", target: "label-enhancement", type: "LABELED_WITH" },
+    { source: "issue-5", target: "label-ui", type: "LABELED_WITH" },
+    { source: "issue-5", target: "label-darkmode", type: "LABELED_WITH" },
+    { source: "issue-6", target: "label-bug", type: "LABELED_WITH" },
+  ],
+};
+
+
+======================================================================
+// 파일: src/lib/mock-issues.ts
+======================================================================
+import type { Issue } from "@/types/issue";
+
+export const mockIssues: Issue[] = [
+  {
+    id: "1",
+    title: "로그인 페이지 오류 수정",
+    description: "카카오 로그인 후 리다이렉트 실패 건",
+    status: "todo",
+    priority: "high",
+    assignee_id: "1",
+    assignee_name: "김민수",
+    labels: ["bug", "auth"],
+    due_date: "2026-03-20",
+    position: 0,
+    user_id: "current-user",
+    created_at: "2026-03-10T09:00:00Z",
+    updated_at: "2026-03-10T09:00:00Z",
+  },
+  {
+    id: "2",
+    title: "대시보드 차트 반응형 개선",
+    description: "모바일에서 차트가 잘리는 이슈",
+    status: "in_progress",
+    priority: "medium",
+    assignee_id: "2",
+    assignee_name: "이지은",
+    labels: ["ui", "responsive"],
+    due_date: "2026-03-18",
+    position: 0,
+    user_id: "current-user",
+    created_at: "2026-03-08T14:00:00Z",
+    updated_at: "2026-03-12T10:00:00Z",
+  },
+  {
+    id: "3",
+    title: "QR 명함 공유 기능",
+    description: "SNS 공유 버튼 추가",
+    status: "todo",
+    priority: "medium",
+    assignee_id: null,
+    assignee_name: null,
+    labels: ["feature"],
+    due_date: null,
+    position: 1,
+    user_id: "current-user",
+    created_at: "2026-03-11T11:00:00Z",
+    updated_at: "2026-03-11T11:00:00Z",
+  },
+  {
+    id: "4",
+    title: "사용자 목록 페이지네이션",
+    description: "",
+    status: "done",
+    priority: "low",
+    assignee_id: "4",
+    assignee_name: "최유리",
+    labels: ["enhancement"],
+    due_date: "2026-03-15",
+    position: 0,
+    user_id: "current-user",
+    created_at: "2026-03-05T08:00:00Z",
+    updated_at: "2026-03-14T16:00:00Z",
+  },
+  {
+    id: "5",
+    title: "다크모드 색상 통일",
+    description: "일부 페이지에서 다크모드 색상이 불일치",
+    status: "done",
+    priority: "low",
+    assignee_id: "1",
+    assignee_name: "김민수",
+    labels: ["ui", "darkmode"],
+    due_date: "2026-03-12",
+    position: 1,
+    user_id: "current-user",
+    created_at: "2026-03-06T10:00:00Z",
+    updated_at: "2026-03-11T15:00:00Z",
+  },
+  {
+    id: "6",
+    title: "설정 페이지 알림 토글 버그",
+    description: "토글 전환 시 상태가 저장되지 않음",
+    status: "in_review",
+    priority: "high",
+    assignee_id: "2",
+    assignee_name: "이지은",
+    labels: ["bug"],
+    due_date: "2026-03-16",
+    position: 0,
+    user_id: "current-user",
+    created_at: "2026-03-09T15:00:00Z",
+    updated_at: "2026-03-14T11:00:00Z",
+  },
+];
+
+
+======================================================================
+// 파일: src/lib/neo4j-sync.ts
+======================================================================
+import { getDriver } from "./neo4j";
+import type { Issue } from "@/types/issue";
+
+async function runCypher(query: string, params: Record<string, unknown>): Promise<void> {
+  const driver = getDriver();
+  if (!driver) return;
+
+  const session = driver.session();
+  try {
+    await session.run(query, params);
+  } catch (error) {
+    console.error("Neo4j sync failed:", error);
+  } finally {
+    await session.close();
+  }
+}
+
+export async function syncIssueCreate(issue: Issue): Promise<void> {
+  await runCypher(
+    `MERGE (i:Issue {id: $id})
+     SET i.title = $title, i.status = $status, i.priority = $priority,
+         i.created_at = $created_at
+     WITH i
+     FOREACH (_ IN CASE WHEN $assignee_id IS NOT NULL THEN [1] ELSE [] END |
+       MERGE (u:User {id: $assignee_id})
+       ON CREATE SET u.name = $assignee_name
+       MERGE (i)-[:ASSIGNED_TO]->(u)
+     )
+     WITH i
+     UNWIND CASE WHEN size($labels) > 0 THEN $labels ELSE [null] END AS labelName
+     WITH i, labelName WHERE labelName IS NOT NULL
+     MERGE (l:Label {name: labelName})
+     MERGE (i)-[:LABELED_WITH]->(l)`,
+    {
+      id: issue.id,
+      title: issue.title,
+      status: issue.status,
+      priority: issue.priority,
+      created_at: issue.created_at,
+      assignee_id: issue.assignee_id,
+      assignee_name: issue.assignee_name ?? "Unknown",
+      labels: issue.labels ?? [],
+    },
+  );
+}
+
+export async function syncIssueUpdate(issue: Issue): Promise<void> {
+  await runCypher(
+    `MATCH (i:Issue {id: $id})
+     SET i.title = $title, i.status = $status, i.priority = $priority
+     WITH i
+     OPTIONAL MATCH (i)-[ra:ASSIGNED_TO]->()
+     DELETE ra
+     WITH i
+     OPTIONAL MATCH (i)-[rl:LABELED_WITH]->()
+     DELETE rl
+     WITH i
+     FOREACH (_ IN CASE WHEN $assignee_id IS NOT NULL THEN [1] ELSE [] END |
+       MERGE (u:User {id: $assignee_id})
+       ON CREATE SET u.name = $assignee_name
+       MERGE (i)-[:ASSIGNED_TO]->(u)
+     )
+     WITH i
+     UNWIND CASE WHEN size($labels) > 0 THEN $labels ELSE [null] END AS labelName
+     WITH i, labelName WHERE labelName IS NOT NULL
+     MERGE (l:Label {name: labelName})
+     MERGE (i)-[:LABELED_WITH]->(l)`,
+    {
+      id: issue.id,
+      title: issue.title,
+      status: issue.status,
+      priority: issue.priority,
+      assignee_id: issue.assignee_id,
+      assignee_name: issue.assignee_name ?? "Unknown",
+      labels: issue.labels ?? [],
+    },
+  );
+}
+
+export async function syncIssueDelete(issueId: string): Promise<void> {
+  await runCypher(
+    `MATCH (i:Issue {id: $id}) DETACH DELETE i`,
+    { id: issueId },
+  );
+}
+
+
+======================================================================
+// 파일: src/lib/neo4j.ts
+======================================================================
+// Server-only module — import only in API routes
+import neo4j, { type Driver } from "neo4j-driver";
+
+let driver: Driver | null = null;
+
+export function getDriver(): Driver | null {
+  const uri = process.env.NEO4J_URI;
+  const user = process.env.NEO4J_USERNAME;
+  const password = process.env.NEO4J_PASSWORD;
+
+  if (!uri || !user || !password) return null;
+
+  if (!driver) {
+    driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
+  }
+  return driver;
+}
+
+
+======================================================================
+// 파일: src/lib/reports.ts
+======================================================================
+import { supabase } from "./supabase";
+import type { Report, ReportHistory, ChartDef, QaResponse } from "@/types/report";
+
+const USE_MOCK = !process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+function mapReport(row: Record<string, unknown>): Report {
+  return {
+    id: row.id as string,
+    issue_id: (row.issue_id as string) ?? null,
+    template_id: row.template_id as string,
+    title: row.title as string,
+    data: (row.data as Record<string, string | number>[]) ?? [],
+    chart_config: (row.chart_config as ChartDef[]) ?? [],
+    qa_responses: (row.qa_responses as QaResponse[]) ?? [],
+    version: (row.version as number) ?? 1,
+    created_by: (row.created_by as string) ?? null,
+    created_at: (row.created_at as string) ?? "",
+    updated_at: (row.updated_at as string) ?? "",
+  };
+}
+
+function mapHistory(row: Record<string, unknown>): ReportHistory {
+  return {
+    id: row.id as string,
+    report_id: row.report_id as string,
+    version: (row.version as number) ?? 1,
+    data: (row.data as Record<string, string | number>[]) ?? [],
+    chart_config: (row.chart_config as ChartDef[]) ?? [],
+    qa_responses: (row.qa_responses as QaResponse[]) ?? [],
+    change_note: (row.change_note as string) ?? null,
+    created_by: (row.created_by as string) ?? null,
+    created_at: (row.created_at as string) ?? "",
+  };
+}
+
+export async function fetchReports(): Promise<Report[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await supabase
+    .from("reports")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (error) return [];
+  return (data ?? []).map(mapReport);
+}
+
+export async function fetchReportsByIssueId(issueId: string): Promise<Report[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await supabase
+    .from("reports")
+    .select("*")
+    .eq("issue_id", issueId)
+    .order("updated_at", { ascending: false });
+  if (error) return [];
+  return (data ?? []).map(mapReport);
+}
+
+export async function fetchReport(id: string): Promise<Report | null> {
+  if (USE_MOCK) return null;
+  const { data, error } = await supabase
+    .from("reports")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error || !data) return null;
+  return mapReport(data);
+}
+
+export interface CreateReportInput {
+  issue_id?: string | null;
+  template_id: string;
+  title: string;
+  data: Record<string, string | number>[];
+  chart_config: ChartDef[];
+  qa_responses?: QaResponse[];
+}
+
+export async function createReport(input: CreateReportInput): Promise<Report> {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const { data, error } = await supabase
+    .from("reports")
+    .insert({
+      issue_id: input.issue_id || null,
+      template_id: input.template_id,
+      title: input.title,
+      data: input.data,
+      chart_config: input.chart_config,
+      qa_responses: input.qa_responses ?? [],
+      version: 1,
+      created_by: user?.id ?? null,
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return mapReport(data);
+}
+
+export interface UpdateReportInput {
+  title?: string;
+  data?: Record<string, string | number>[];
+  chart_config?: ChartDef[];
+  qa_responses?: QaResponse[];
+  change_note?: string;
+}
+
+export async function updateReport(
+  id: string,
+  input: UpdateReportInput,
+): Promise<Report> {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // 1. 현재 버전을 이력에 저장 + 업데이트를 한 트랜잭션처럼 처리
+  const current = await fetchReport(id);
+  if (!current) throw new Error("Report not found");
+
+  // 2. 리포트 업데이트 (version 조건으로 optimistic lock)
+  const updateData: Record<string, unknown> = {
+    version: current.version + 1,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.title !== undefined) updateData.title = input.title;
+  if (input.data !== undefined) updateData.data = input.data;
+  if (input.chart_config !== undefined) updateData.chart_config = input.chart_config;
+  if (input.qa_responses !== undefined) updateData.qa_responses = input.qa_responses;
+
+  const { data, error } = await supabase
+    .from("reports")
+    .update(updateData)
+    .eq("id", id)
+    .eq("version", current.version) // optimistic lock: 버전 불일치 시 업데이트 실패
+    .select()
+    .single();
+
+  if (error || !data) {
+    throw new Error("동시 수정이 감지되었습니다. 페이지를 새로고침하세요.");
+  }
+
+  // 3. 업데이트 성공 후 이력 저장 (실패해도 데이터 무결성에 영향 없음)
+  await supabase.from("report_histories").insert({
+    report_id: id,
+    version: current.version,
+    data: current.data,
+    chart_config: current.chart_config,
+    qa_responses: current.qa_responses,
+    change_note: input.change_note ?? null,
+    created_by: user?.id ?? null,
+  });
+
+  return mapReport(data);
+}
+
+export async function deleteReport(id: string): Promise<void> {
+  const { error } = await supabase.from("reports").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function fetchReportHistories(reportId: string): Promise<ReportHistory[]> {
+  if (USE_MOCK) return [];
+  const { data, error } = await supabase
+    .from("report_histories")
+    .select("*")
+    .eq("report_id", reportId)
+    .order("version", { ascending: false });
+  if (error) return [];
+  return (data ?? []).map(mapHistory);
+}
+
+
+======================================================================
+// 파일: src/lib/subtasks.ts
+======================================================================
+import { supabase } from "./supabase";
+import type { Subtask, MySubtask, SubtaskCount, SubtaskActivity } from "@/types/subtask";
+
+async function getActor(): Promise<{ id: string | null; name: string | null }> {
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return { id: null, name: null };
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("name")
+    .eq("id", data.user.id)
+    .single();
+  return { id: data.user.id, name: profile?.name ?? null };
+}
+
+async function logActivity(
+  subtaskId: string,
+  issueId: string,
+  action: SubtaskActivity["action"],
+  oldValue?: string | null,
+  newValue?: string | null,
+) {
+  const actor = await getActor();
+  await supabase.from("subtask_activities").insert({
+    subtask_id: subtaskId,
+    issue_id: issueId,
+    action,
+    old_value: oldValue ?? null,
+    new_value: newValue ?? null,
+    actor_id: actor.id,
+    actor_name: actor.name,
+  });
+}
+
+export async function fetchSubtasks(issueId: string): Promise<Subtask[]> {
+  const { data, error } = await supabase
+    .from("issue_subtasks")
+    .select("*")
+    .eq("issue_id", issueId)
+    .order("position");
+  if (error) return [];
+  return data ?? [];
+}
+
+export async function createSubtask(
+  issueId: string,
+  title: string,
+  assigneeId?: string | null,
+  assigneeName?: string | null,
+): Promise<Subtask> {
+  const { count } = await supabase
+    .from("issue_subtasks")
+    .select("*", { count: "exact", head: true })
+    .eq("issue_id", issueId);
+
+  const { data, error } = await supabase
+    .from("issue_subtasks")
+    .insert({
+      issue_id: issueId,
+      title,
+      assignee_id: assigneeId ?? null,
+      assignee_name: assigneeName ?? null,
+      position: count ?? 0,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  await logActivity(data.id, issueId, "created", null, title);
+  return data;
+}
+
+export async function updateSubtaskTitle(id: string, issueId: string, oldTitle: string, newTitle: string): Promise<Subtask> {
+  const { data, error } = await supabase
+    .from("issue_subtasks")
+    .update({ title: newTitle })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  await logActivity(id, issueId, "title_changed", oldTitle, newTitle);
+  return data;
+}
+
+export async function updateSubtaskAssignee(
+  id: string,
+  issueId: string,
+  oldAssigneeName: string | null,
+  newAssigneeId: string | null,
+  newAssigneeName: string | null,
+): Promise<Subtask> {
+  const { data, error } = await supabase
+    .from("issue_subtasks")
+    .update({ assignee_id: newAssigneeId, assignee_name: newAssigneeName })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  await logActivity(id, issueId, "assignee_changed", oldAssigneeName ?? "미배정", newAssigneeName ?? "미배정");
+  return data;
+}
+
+export async function toggleSubtask(id: string, isDone: boolean, issueId?: string): Promise<Subtask> {
+  const { data, error } = await supabase
+    .from("issue_subtasks")
+    .update({ is_done: isDone })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  if (issueId) {
+    await logActivity(id, issueId, isDone ? "completed" : "reopened");
+  }
+  return data;
+}
+
+export async function deleteSubtask(id: string, issueId?: string, title?: string): Promise<void> {
+  if (issueId) {
+    await logActivity(id, issueId, "deleted", title ?? null, null);
+  }
+  await supabase.from("issue_subtasks").delete().eq("id", id);
+}
+
+export async function fetchSubtaskActivities(issueId: string): Promise<SubtaskActivity[]> {
+  const { data, error } = await supabase
+    .from("subtask_activities")
+    .select("*")
+    .eq("issue_id", issueId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) return [];
+  return data ?? [];
+}
+
+export async function fetchMySubtasks(userId: string): Promise<MySubtask[]> {
+  const { data, error } = await supabase
+    .from("issue_subtasks")
+    .select("*, issues!inner(title, status, labels)")
+    .eq("assignee_id", userId)
+    .order("is_done")
+    .order("created_at", { ascending: false });
+
+  if (error) return [];
+  return (data ?? []).map((row) => {
+    const issue = row.issues as { title: string; status: string; labels: string[] } | null;
+    return {
+      ...row,
+      issue_title: issue?.title ?? "",
+      issue_status: issue?.status ?? "todo",
+      issue_labels: issue?.labels ?? [],
+    };
+  });
+}
+
+export async function fetchSubtaskCounts(issueIds: string[]): Promise<Map<string, SubtaskCount>> {
+  if (issueIds.length === 0) return new Map();
+
+  const { data, error } = await supabase
+    .from("issue_subtasks")
+    .select("issue_id, is_done")
+    .in("issue_id", issueIds);
+
+  if (error) return new Map();
+
+  const counts = new Map<string, SubtaskCount>();
+  for (const row of data ?? []) {
+    const existing = counts.get(row.issue_id) ?? { issue_id: row.issue_id, total: 0, done: 0 };
+    existing.total++;
+    if (row.is_done) existing.done++;
+    counts.set(row.issue_id, existing);
+  }
+  return counts;
+}
+
+
+======================================================================
+// 파일: src/lib/supabase.ts
+======================================================================
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
+
+export const supabase = createClient(
+  supabaseUrl || "https://placeholder.supabase.co",
+  supabaseAnonKey || "placeholder-key"
+);
+
+
+======================================================================
+// 파일: src/lib/users.ts
+======================================================================
+import { supabase } from "./supabase";
+import { users as mockUsers } from "./mock-data";
+import type { User, UpdateProfileInput } from "@/types";
+
+const USE_MOCK = !process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+export async function fetchProfiles(): Promise<User[]> {
+  if (USE_MOCK) return mockUsers;
+
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) return mockUsers;
+
+    return (data ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      email: p.email ?? "",
+      role: p.role as User["role"],
+      status: p.status as User["status"],
+      joinedAt: p.created_at?.split("T")[0] ?? "",
+      avatar: p.avatar_url ?? undefined,
+    }));
+  } catch {
+    return mockUsers;
+  }
+}
+
+export async function updateProfile(
+  userId: string,
+  input: UpdateProfileInput
+): Promise<User> {
+  const res = await fetch("/api/users", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, ...input }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error ?? "프로필 수정에 실패했습니다");
+  }
+
+  const p = await res.json();
+  return {
+    id: p.id,
+    name: p.name,
+    email: p.email ?? "",
+    role: p.role as User["role"],
+    status: p.status as User["status"],
+    joinedAt: p.created_at?.split("T")[0] ?? "",
+    avatar: p.avatar_url ?? undefined,
+  };
+}
+
+
+======================================================================
+// 파일: src/lib/utils.ts
+======================================================================
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+export function formatRelativeTime(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "방금 전";
+  if (minutes < 60) return `${minutes}분 전`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  return `${days}일 전`;
+}
+
+
+======================================================================
+// 파일: src/middleware.ts
+======================================================================
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+// 미들웨어에서 인증 체크를 제거
+// Supabase 클라이언트는 localStorage 기반이므로 서버사이드 미들웨어에서 세션을 확인할 수 없음
+// 인증은 클라이언트 사이드의 (dashboard)/layout.tsx auth guard에서 처리
+
+const PUBLIC_PATHS = ["/login", "/auth", "/u/", "/api/"];
+
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // API, 인증, 공개 경로는 통과
+  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+    return NextResponse.next();
+  }
+
+  // 그 외 모든 경로 통과 — 인증은 클라이언트에서 처리
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|icons/|sw.js|manifest.json|.*\\.png$|.*\\.svg$).*)",
+  ],
+};
+
+
+======================================================================
+// 파일: src/store/bid-analyzer-store.ts
+======================================================================
+import { create } from 'zustand';
+import type {
+  UploadedFile,
+  DocumentModel,
+  TextSelection,
+  KeyValuePair,
+  MappingRow,
+} from '@/types/bid-analyzer';
+
+interface BidAnalyzerState {
+  // Tab
+  activeTab: 'analysis' | 'writing';
+  setActiveTab: (tab: 'analysis' | 'writing') => void;
+
+  // Files
+  uploadedFiles: UploadedFile[];
+  currentFileIndex: number | null;
+  addFile: (file: UploadedFile) => void;
+  setCurrentFile: (index: number) => void;
+  removeFile: (id: string) => void;
+
+  // Document model
+  documentModel: DocumentModel | null;
+  isParsingDocument: boolean;
+  setDocumentModel: (model: DocumentModel | null) => void;
+  setParsingDocument: (v: boolean) => void;
+
+  // Selection mode
+  editMode: boolean;
+  toggleEditMode: () => void;
+  pendingSelection: TextSelection | null;
+  setPendingSelection: (s: TextSelection | null) => void;
+
+  // Key-Value pairs
+  kvPairs: KeyValuePair[];
+  addKvPair: (pair: KeyValuePair) => void;
+  removeKvPair: (id: string) => void;
+  updateKvPair: (id: string, updates: Partial<KeyValuePair>) => void;
+  clearKvPairs: () => void;
+
+  // Tab 2 - Writing
+  selectedFileForWriting: string | null;
+  setSelectedFileForWriting: (id: string | null) => void;
+  mappingData: MappingRow[] | null;
+  setMappingData: (data: MappingRow[] | null) => void;
+  generationStatus: 'idle' | 'generating' | 'done' | 'error';
+  setGenerationStatus: (s: 'idle' | 'generating' | 'done' | 'error') => void;
+  generatedFileUrl: string | null;
+  setGeneratedFileUrl: (url: string | null) => void;
+}
+
+export const useBidAnalyzerStore = create<BidAnalyzerState>((set) => ({
+  activeTab: 'analysis',
+  setActiveTab: (tab) => set({ activeTab: tab }),
+
+  uploadedFiles: [],
+  currentFileIndex: null,
+  addFile: (file) =>
+    set((s) => ({
+      uploadedFiles: [...s.uploadedFiles, file],
+      currentFileIndex: s.uploadedFiles.length,
+    })),
+  setCurrentFile: (index) => set({ currentFileIndex: index }),
+  removeFile: (id) =>
+    set((s) => ({
+      uploadedFiles: s.uploadedFiles.filter((f) => f.id !== id),
+    })),
+
+  documentModel: null,
+  isParsingDocument: false,
+  setDocumentModel: (model) => set({ documentModel: model }),
+  setParsingDocument: (v) => set({ isParsingDocument: v }),
+
+  editMode: false,
+  toggleEditMode: () => set((s) => ({ editMode: !s.editMode })),
+  pendingSelection: null,
+  setPendingSelection: (s) => set({ pendingSelection: s }),
+
+  kvPairs: [],
+  addKvPair: (pair) => set((s) => ({ kvPairs: [...s.kvPairs, pair] })),
+  removeKvPair: (id) =>
+    set((s) => ({ kvPairs: s.kvPairs.filter((p) => p.id !== id) })),
+  updateKvPair: (id, updates) =>
+    set((s) => ({
+      kvPairs: s.kvPairs.map((p) => (p.id === id ? { ...p, ...updates } : p)),
+    })),
+  clearKvPairs: () => set({ kvPairs: [] }),
+
+  selectedFileForWriting: null,
+  setSelectedFileForWriting: (id) => set({ selectedFileForWriting: id }),
+  mappingData: null,
+  setMappingData: (data) => set({ mappingData: data }),
+  generationStatus: 'idle',
+  setGenerationStatus: (s) => set({ generationStatus: s }),
+  generatedFileUrl: null,
+  setGeneratedFileUrl: (url) => set({ generatedFileUrl: url }),
+}));
+
+
+======================================================================
+// 파일: src/store/dashboard-store.ts
+======================================================================
+import { create } from "zustand";
+
+interface DashboardState {
+  sidebarOpen: boolean;
+  toggleSidebar: () => void;
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+}
+
+export const useDashboardStore = create<DashboardState>((set) => ({
+  sidebarOpen: true,
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  searchQuery: "",
+  setSearchQuery: (searchQuery) => set({ searchQuery }),
+  activeTab: "dashboard",
+  setActiveTab: (activeTab) => set({ activeTab }),
+}));
+
+
+======================================================================
+// 파일: src/types/api.ts
+======================================================================
+import type { Session, User } from "@supabase/supabase-js";
+
+/**
+ * Auth context injected into authenticated API handlers.
+ * session and user are guaranteed non-null.
+ */
+export interface AuthContext {
+  session: Session;
+  user: User;
+}
+
+/**
+ * Auth context for optional auth routes.
+ * session and user may be null.
+ */
+export interface OptionalAuthContext {
+  session: Session | null;
+  user: User | null;
+}
+
+/**
+ * Handler function type for routes that require authentication.
+ */
+export type AuthenticatedHandler = (
+  request: Request,
+  context: AuthContext
+) => Promise<Response>;
+
+/**
+ * Handler function type for routes with optional authentication.
+ */
+export type OptionalAuthHandler = (
+  request: Request,
+  context: OptionalAuthContext
+) => Promise<Response>;
+
+
+======================================================================
+// 파일: src/types/attachment.ts
+======================================================================
+export interface Attachment {
+  id: string;
+  issue_id: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  content_type: string;
+  uploaded_by: string | null;
+  created_at: string;
+}
+
+
+======================================================================
+// 파일: src/types/bid-analyzer.ts
+======================================================================
+// Bid Document Analyzer Types
+
+export type FileType = 'hwpx' | 'hwp' | 'docx' | 'doc' | 'xlsx' | 'xls' | 'pdf';
+export type SupportedViewerType = 'hwpx' | 'docx' | 'xlsx' | 'pdf';
+
+export interface DocumentPosition {
+  fileType: FileType;
+  sectionIndex: number;
+  // Table context
+  tableIndex?: number;
+  rowIndex?: number;
+  colIndex?: number;
+  // Paragraph context
+  paragraphIndex: number;
+  runIndex: number;
+  charOffset: number;
+  charLength: number;
+  // HWPX specific
+  charPrIdRef?: string;
+  textColor?: string;
+  // XLSX specific
+  sheetName?: string;
+  cellRef?: string;
+  // PDF specific
+  pageNumber?: number;
+  // DOM mapping
+  domElementId: string;
+}
+
+export interface TextSelection {
+  id: string;
+  text: string;
+  position: DocumentPosition;
+  role?: 'key' | 'value';
+}
+
+export interface KeyValuePair {
+  id: string;
+  key: string;
+  keyPosition: DocumentPosition;
+  value: string;
+  valuePosition: DocumentPosition;
+  colorType?: 'black' | 'blue';
+  contentType?: 'text' | 'amount' | 'table' | 'image' | 'description';
+  notes?: string;
+}
+
+export interface CharStyle {
+  id: string;
+  textColor: string;
+  height: number;
+  fontRef?: string;
+  isBlue: boolean;
+}
+
+export interface DocumentSection {
+  index: number;
+  name: string;
+  elements: DocumentElement[];
+}
+
+export interface DocumentElement {
+  type: 'paragraph' | 'table' | 'image';
+  position: DocumentPosition;
+  content: string;
+  children?: DocumentElement[];
+  style?: {
+    color: string;
+    fontSize: number;
+    bold: boolean;
+    italic: boolean;
+  };
+}
+
+export interface DocumentModel {
+  fileName: string;
+  fileType: FileType;
+  originalBlob: Blob;
+  sections: DocumentSection[];
+  charStyles?: Map<string, CharStyle>;
+  renderedHtml: string;
+  positionMap: Map<string, DocumentPosition>;
+}
+
+export interface UploadedFile {
+  id: string;
+  name: string;
+  type: FileType;
+  size: number;
+  blob: Blob;
+  uploadedAt: Date;
+  model?: DocumentModel;
+}
+
+export interface MappingRow {
+  [key: string]: string | number | undefined;
+  No?: number;
+  Key?: string;
+  Value?: string;
+  Section?: string;
+  Location?: string;
+  KeyPosition?: string;
+  ValuePosition?: string;
+}
+
+export const BLUE_COLORS = new Set([
+  '#3366ff', '#0000ff', '#3366FF', '#0000FF',
+  '#0070c0', '#0070C0', '#4472c4', '#4472C4',
+]);
+
+export function isBlueColor(color: string): boolean {
+  if (BLUE_COLORS.has(color)) return true;
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  return b > 150 && r < 100 && g < 150;
+}
+
+export function getFileType(fileName: string): FileType | null {
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  const map: Record<string, FileType> = {
+    hwpx: 'hwpx', hwp: 'hwp', docx: 'docx', doc: 'doc',
+    xlsx: 'xlsx', xls: 'xls', pdf: 'pdf',
+  };
+  return map[ext || ''] || null;
+}
+
+
+======================================================================
+// 파일: src/types/bid.ts
+======================================================================
+export interface ProposalData {
+  projectName: string;
+  clientName: string;
+  submitDate: string;
+  company: { name: string; ceo: string; phone: string; address: string };
+  companyIntro: string;
+  trackRecord: { project: string; client: string; period: string; amount: string }[];
+  understanding: string;
+  strategy: string;
+  systemDiagram: string;
+  techDetail: string;
+  totalPeriod: string;
+  schedule: { phase: string; period: string; deliverable: string }[];
+  team: { name: string; role: string; grade: string; period: string }[];
+  costs: { item: string; qty: number; unitPrice: number; amount: number }[];
+  vatIncluded: boolean;
+}
+
+export interface EstimateData {
+  title: string;
+  recipient: { company: string; contact: string };
+  sender: { company: string; ceo: string; phone: string };
+  date: string;
+  validUntil: string;
+  items: { name: string; spec: string; qty: number; unitPrice: number; amount: number }[];
+  deliveryTerms: string;
+  paymentTerms: string;
+  notes: string;
+}
+
+export interface WizardStep {
+  id: number;
+  label: string;
+}
+
+export type BidTemplateId = "proposal" | "estimate";
+
+
+======================================================================
+// 파일: src/types/card-profile.ts
+======================================================================
+export interface CardProfile {
+  id: string;
+  user_id: string;
+  unique_id: string;
+  name: string;
+  email: string;
+  phone: string;
+  websites: string[];
+  image?: string; // base64 data URL
+  created_at: string;
+  updated_at: string;
+}
+
+
+======================================================================
+// 파일: src/types/graph.ts
+======================================================================
+export type GraphNodeType = "person" | "skill" | "project" | "education" | "certificate" | "document" | "role" | "tool" | "user" | "issue" | "label";
+
+export type GraphLinkType =
+  | "HAS_SKILL" | "WORKED_ON" | "COMPLETED" | "EARNED"
+  | "AUTHORED" | "HAS_ROLE" | "USES_TOOL" | "USED_IN"
+  // 레거시 호환
+  | "ASSIGNED_TO" | "LABELED_WITH" | "CREATED_BY";
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  type: GraphNodeType;
+  meta?: {
+    [key: string]: string | number | undefined;
+  };
+  x?: number;
+  y?: number;
+  fx?: number;
+  fy?: number;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  type: GraphLinkType;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
+export interface GraphFilterState {
+  nodeTypes: Record<string, boolean>;
+  linkTypes: Record<string, boolean>;
+  search: string;
+}
+
+export type SelectedNode = GraphNode | null;
+
+
+======================================================================
+// 파일: src/types/index.ts
+======================================================================
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "user" | "viewer";
+  status: "active" | "inactive";
+  joinedAt: string;
+  avatar?: string;
+}
+
+export interface UpdateProfileInput {
+  name?: string;
+  role?: "admin" | "user" | "viewer";
+  status?: "active" | "inactive";
+}
+
+export interface MetricCard {
+  title: string;
+  value: string;
+  change: number;
+  trend: "up" | "down";
+}
+
+export interface ChartData {
+  name: string;
+  [key: string]: string | number;
+}
+
+export interface Activity {
+  id: string;
+  user: string;
+  action: string;
+  target: string;
+  timestamp: string;
+}
+
+
+======================================================================
+// 파일: src/types/issue.ts
+======================================================================
+export type IssueStatus = "todo" | "in_progress" | "in_review" | "done";
+export type IssuePriority = "high" | "medium" | "low";
+
+export interface Issue {
+  id: string;
+  title: string;
+  description: string;
+  status: IssueStatus;
+  priority: IssuePriority;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  labels: string[];
+  due_date: string | null;
+  position: number;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IssueColumn {
+  id: IssueStatus;
+  title: string;
+  issues: Issue[];
+}
+
+export interface CreateIssueInput {
+  title: string;
+  description?: string;
+  status?: IssueStatus;
+  priority: IssuePriority;
+  assignee_id?: string | null;
+  assignee_name?: string | null;
+  labels?: string[];
+  due_date?: string | null;
+}
+
+export interface UpdateIssueInput extends Partial<CreateIssueInput> {
+  position?: number;
+}
+
+
+======================================================================
+// 파일: src/types/link.ts
+======================================================================
+export interface IssueLink {
+  id: string;
+  issue_id: string;
+  url: string;
+  label: string | null;
+  created_at: string;
+}
+
+
+======================================================================
+// 파일: src/types/report.ts
+======================================================================
+// ── Template 정의 ──
+
+export interface FieldDef {
+  key: string;
+  label: string;
+  type: "string" | "number" | "date";
+  question: string;
+}
+
+export interface ChartDef {
+  type: "bar" | "line" | "area" | "pie";
+  xKey: string;
+  yKeys: string[];
+  title: string;
+  colors?: string[];
+}
+
+export interface ReportTemplate {
+  id: string;
+  name: string;
+  description: string;
+  requiredFields: FieldDef[];
+  optionalFields: FieldDef[];
+  charts: ChartDef[];
+  tableColumns?: string[];
+}
+
+// ── Report 데이터 ──
+
+export interface QaResponse {
+  fieldKey: string;
+  question: string;
+  answer: string;
+  answeredAt: string;
+}
+
+export interface Report {
+  id: string;
+  issue_id: string | null;
+  template_id: string;
+  title: string;
+  data: Record<string, string | number>[];
+  chart_config: ChartDef[];
+  qa_responses: QaResponse[];
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReportHistory {
+  id: string;
+  report_id: string;
+  version: number;
+  data: Record<string, string | number>[];
+  chart_config: ChartDef[];
+  qa_responses: QaResponse[];
+  change_note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+// ── 파싱 결과 ──
+
+export interface ParsedData {
+  headers: string[];
+  rows: Record<string, string | number>[];
+  fileName: string;
+}
+
+// ── 필드 매칭 결과 ──
+
+export interface FieldMatchResult {
+  matched: { field: FieldDef; column: string }[];
+  missing: FieldDef[];
+}
+
+
+======================================================================
+// 파일: src/types/subtask.ts
+======================================================================
+export interface Subtask {
+  id: string;
+  issue_id: string;
+  title: string;
+  is_done: boolean;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  position: number;
+  created_at: string;
+}
+
+export interface MySubtask extends Subtask {
+  issue_title: string;
+  issue_status: string;
+  issue_labels: string[];
+}
+
+export interface SubtaskCount {
+  issue_id: string;
+  total: number;
+  done: number;
+}
+
+export interface SubtaskActivity {
+  id: string;
+  subtask_id: string;
+  issue_id: string;
+  action: "created" | "title_changed" | "assignee_changed" | "completed" | "reopened" | "deleted";
+  old_value: string | null;
+  new_value: string | null;
+  actor_id: string | null;
+  actor_name: string | null;
+  created_at: string;
+}
+
