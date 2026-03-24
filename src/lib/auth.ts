@@ -14,6 +14,7 @@ export function onAuthStateChange(callback: (session: Session | null) => void) {
 
 export async function signOut(): Promise<void> {
   await supabase.auth.signOut();
+  window.location.href = '/login';
 }
 
 export function getDisplayName(user: User): string {

@@ -94,35 +94,58 @@ Deno.serve(async (req) => {
     const kakaoEmail = `kakao_${kakaoId}@kakao.local`
     const userMeta = { kakao_id: kakaoId, full_name: nickname, avatar_url: avatarUrl, provider: 'kakao' }
 
+    // 먼저 기존 사용자 확인 (listUsers 페이지네이션 대신 email 필터)
     let user
-    const { data: createData, error: createError } = await supabase.auth.admin.createUser({
-      email: kakaoEmail,
-      email_confirm: true,
-      user_metadata: userMeta,
-    })
-
-    if (createError) {
-      const isExisting = createError.message.includes('already been registered')
-        || createError.message.includes('Database error')
-      if (isExisting) {
-        authLog('user_upsert', true, { kakao_id: kakaoId, action: 'existing_user' })
-        let page = 1
-        while (!user) {
-          const { data: { users } } = await supabase.auth.admin.listUsers({ page, perPage: 100 })
-          if (!users || users.length === 0) break
-          user = users.find((u: { email?: string }) => u.email === kakaoEmail)
-          page++
-        }
-        if (user) {
-          await supabase.auth.admin.updateUserById(user.id, { user_metadata: userMeta })
-        }
-      } else {
-        authLog('user_upsert', false, { kakao_id: kakaoId, error: createError.message })
-        throw createError
+    {
+      let page = 1
+      while (!user) {
+        const { data: { users } } = await supabase.auth.admin.listUsers({ page, perPage: 100 })
+        if (!users || users.length === 0) break
+        user = users.find((u: { email?: string }) => u.email === kakaoEmail)
+        page++
       }
+    }
+
+    if (user) {
+      // 기존 사용자 → 메타데이터 갱신
+      authLog('user_upsert', true, { kakao_id: kakaoId, action: 'existing_user' })
+      await supabase.auth.admin.updateUserById(user.id, { user_metadata: userMeta })
     } else {
-      authLog('user_upsert', true, { kakao_id: kakaoId, action: 'new_user' })
+      // 신규 사용자 생성
+      const { data: createData, error: createError } = await supabase.auth.admin.createUser({
+        email: kakaoEmail,
+        email_confirm: true,
+        user_metadata: userMeta,
+      })
+
+      if (createError) {
+        authLog('user_upsert', false, { kakao_id: kakaoId, error: createError.message })
+        throw new Error(`신규 사용자 생성 실패: ${createError.message}`)
+      }
+
       user = createData.user
+      authLog('user_upsert', true, { kakao_id: kakaoId, action: 'new_user' })
+    }
+
+    // 프로필 폴백: 트리거가 실패했을 경우 수동 생성
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .single()
+
+    if (!existingProfile) {
+      const { error: profileError } = await supabase.from('profiles').upsert({
+        id: user.id,
+        name: nickname,
+        email: kakaoEmail,
+        avatar_url: avatarUrl ?? '',
+      }, { onConflict: 'id' })
+      if (profileError) {
+        authLog('profile_fallback', false, { kakao_id: kakaoId, error: profileError.message })
+      } else {
+        authLog('profile_fallback', true, { kakao_id: kakaoId })
+      }
     }
 
     // 4) 세션 생성
