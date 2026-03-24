@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Search, Bell, Sun, Moon, Monitor, LogOut, Download, Share, X, Check } from "lucide-react";
 import { useDashboardStore } from "@/store/dashboard-store";
 import { useTheme } from "@/components/layout/theme-provider";
@@ -31,9 +32,21 @@ function isStandalone() {
   return window.matchMedia("(display-mode: standalone)").matches || ("standalone" in navigator && (navigator as Record<string, unknown>).standalone === true);
 }
 
+const SEARCH_PAGES = [
+  { href: "/dashboard", label: "일정", keywords: ["일정", "캘린더", "스케줄", "calendar"] },
+  { href: "/analytics", label: "입찰문서", keywords: ["입찰", "문서", "분석", "제안", "bid"] },
+  { href: "/users", label: "사용자", keywords: ["사용자", "유저", "관리자", "user"] },
+  { href: "/qr-cards", label: "QR 명함", keywords: ["qr", "명함", "카드", "프로필"] },
+  { href: "/board", label: "보드", keywords: ["보드", "칸반", "이슈", "할일", "board", "kanban"] },
+  { href: "/graph", label: "SW역량", keywords: ["역량", "스킬", "그래프", "프로필", "skill", "graph"] },
+  { href: "/settings", label: "회의", keywords: ["회의", "미팅", "화상", "meeting", "jitsi"] },
+];
+
 export function Header() {
   const { searchQuery, setSearchQuery } = useDashboardStore();
   const { mode, setMode } = useTheme();
+  const router = useRouter();
+  const [searchResults, setSearchResults] = useState<typeof SEARCH_PAGES>([]);
   const [displayName, setDisplayName] = useState("사용자");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -96,7 +109,7 @@ export function Header() {
     };
     window.addEventListener("beforeinstallprompt", handler);
 
-    if (isIOS() && !isStandalone() && !sessionStorage.getItem("ios-pwa-dismissed")) {
+    if (isIOS() && !isStandalone() && !localStorage.getItem("ios-pwa-dismissed")) {
       setShowIOSGuide(true);
     }
 
@@ -124,12 +137,41 @@ export function Header() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
         <input
           type="text"
-          placeholder="검색..."
+          placeholder="페이지 검색... (일정, 회의, 보드...)"
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => {
+            const q = e.target.value;
+            setSearchQuery(q);
+            if (q.trim()) {
+              const lower = q.toLowerCase();
+              setSearchResults(SEARCH_PAGES.filter((p) => p.label.includes(q) || p.keywords.some((k) => k.includes(lower))));
+            } else {
+              setSearchResults([]);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && searchResults.length > 0) {
+              router.push(searchResults[0].href);
+              setSearchQuery("");
+              setSearchResults([]);
+            }
+          }}
           className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-2 pl-9 pr-4 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-500"
           data-testid="search-input"
         />
+        {searchResults.length > 0 && (
+          <div className="absolute left-0 top-11 z-50 w-full rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+            {searchResults.map((p) => (
+              <button
+                key={p.href}
+                onClick={() => { router.push(p.href); setSearchQuery(""); setSearchResults([]); }}
+                className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                <Search size={14} className="text-zinc-400" /> {p.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-4">
         {installPrompt && (
@@ -248,7 +290,7 @@ export function Header() {
         <button
           onClick={() => {
             setShowIOSGuide(false);
-            sessionStorage.setItem("ios-pwa-dismissed", "1");
+            localStorage.setItem("ios-pwa-dismissed", "1");
           }}
           className="shrink-0 rounded p-1 text-blue-600 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900"
           aria-label="iOS 설치 안내 닫기"

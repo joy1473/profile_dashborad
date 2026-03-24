@@ -25,6 +25,7 @@ export default function DashboardPage() {
 
   // 수정 모달
   const [editEvent, setEditEvent] = useState<CalendarEvent | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // 새 일정 / 수정 폼
   const [form, setForm] = useState({
@@ -80,6 +81,7 @@ export default function DashboardPage() {
 
   const createEvent = async () => {
     if (!form.title.trim() || !form.startDate || !form.endDate || !userId) return;
+    setSaving(true);
 
     const startAt = buildTimestamp(form.startDate, form.allDay ? "00:00" : form.startTime);
     const endAt = buildTimestamp(form.endDate, form.allDay ? "23:59" : form.endTime);
@@ -106,10 +108,12 @@ export default function DashboardPage() {
       setShowCreate(false);
       fetchEvents();
     }
+    setSaving(false);
   };
 
   const updateEvent = async () => {
     if (!editEvent || !form.title.trim() || !form.startDate || !form.endDate) return;
+    setSaving(true);
 
     const startAt = buildTimestamp(form.startDate, form.allDay ? "00:00" : form.startTime);
     const endAt = buildTimestamp(form.endDate, form.allDay ? "23:59" : form.endTime);
@@ -124,11 +128,12 @@ export default function DashboardPage() {
       meeting_room_name: form.meetingRoomName || null,
     }).eq("id", editEvent.id);
 
-    if (error) { alert(`일정 수정 실패: ${error.message}`); return; }
+    if (error) { alert(`일정 수정 실패: ${error.message}`); setSaving(false); return; }
 
     setEditEvent(null);
     resetForm();
     fetchEvents();
+    setSaving(false);
   };
 
   const deleteEvent = async (id: string) => {
@@ -313,10 +318,10 @@ export default function DashboardPage() {
             )}
             <button
               onClick={editEvent ? updateEvent : createEvent}
-              disabled={!form.title.trim() || !form.startDate || !form.endDate}
+              disabled={!form.title.trim() || !form.startDate || !form.endDate || saving}
               className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {editEvent ? "수정" : "만들기"}
+              {saving ? <><Loader2 size={14} className="animate-spin" /> 저장 중...</> : editEvent ? "수정" : "만들기"}
             </button>
           </div>
         </Card>
