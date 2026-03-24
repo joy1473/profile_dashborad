@@ -11,6 +11,9 @@ importers:
       '@hello-pangea/dnd':
         specifier: ^18.0.1
         version: 18.0.1(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      '@jitsi/react-sdk':
+        specifier: ^1.4.4
+        version: 1.4.4(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@supabase/supabase-js':
         specifier: ^2.99.1
         version: 2.99.1
@@ -413,6 +416,12 @@ packages:
     engines: {node: ^18.17.0 || ^20.3.0 || >=21.0.0}
     cpu: [x64]
     os: [win32]
+
+  '@jitsi/react-sdk@1.4.4':
+    resolution: {integrity: sha512-VV5sy94zmGYByz8ebsOinwvzK/Srekbg+dECHBqGloeyPYpwlOLe6WiqmCCJ2l+wv2CT++xIznkZwcnh2YX2ug==}
+    peerDependencies:
+      react: 16 || 17 || 18 || 19
+      react-dom: 16 || 17 || 18 || 19
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -3032,6 +3041,11 @@ snapshots:
 
   '@img/sharp-win32-x64@0.34.5':
     optional: true
+
+  '@jitsi/react-sdk@1.4.4(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
+    dependencies:
+      react: 19.2.3
+      react-dom: 19.2.3(react@19.2.3)
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

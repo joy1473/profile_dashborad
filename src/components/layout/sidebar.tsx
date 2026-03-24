@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BarChart3, Users, Settings, Menu, X, QrCode, Columns3, Network } from "lucide-react";
+import { LayoutDashboard, BarChart3, Users, Video, Menu, X, QrCode, Columns3, Network } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/store/dashboard-store";
 
@@ -13,7 +13,7 @@ const navItems = [
   { href: "/qr-cards", label: "QR 명함", icon: QrCode },
   { href: "/board", label: "보드", icon: Columns3 },
   { href: "/graph", label: "그래프", icon: Network },
-  { href: "/settings", label: "설정", icon: Settings },
+  { href: "/settings", label: "회의", icon: Video },
 ];
 
 export function Sidebar() {
