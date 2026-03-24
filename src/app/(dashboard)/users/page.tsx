@@ -57,6 +57,10 @@ export default function UsersPage() {
     async (userId: string, input: UpdateProfileInput) => {
       const original = users.find((u) => u.id === userId);
       if (!original) return;
+      if (!isAdmin && userId !== currentUserId) {
+        showToast("관리자만 다른 사용자의 프로필을 수정할 수 있습니다");
+        return;
+      }
 
       // Optimistic update
       setUsers((prev) =>

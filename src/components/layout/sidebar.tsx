@@ -25,11 +25,19 @@ export function Sidebar() {
       <button
         onClick={toggleSidebar}
         className="fixed top-4 left-4 z-50 rounded-lg bg-white p-2 shadow-md lg:hidden dark:bg-zinc-900"
-        aria-label="Toggle sidebar"
+        aria-label="메뉴 열기/닫기"
         data-testid="sidebar-toggle"
       >
         {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
       </button>
+
+      {/* 모바일 오버레이 */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/30 lg:hidden"
+          onClick={toggleSidebar}
+        />
+      )}
 
       <aside
         className={cn(
@@ -50,6 +58,7 @@ export function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => { if (sidebarOpen) toggleSidebar(); }}
                 className={cn(
                   "mb-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                   isActive
@@ -66,7 +75,7 @@ export function Sidebar() {
         </nav>
 
         <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-800 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-600">
-          <p>copyright&copy; 2005 {process.env.NEXT_PUBLIC_COMPANY_NAME ?? "The Polestar"}</p>
+          <p>copyright&copy; 2005-{new Date().getFullYear()} {process.env.NEXT_PUBLIC_COMPANY_NAME ?? "The Polestar"}</p>
           <p>사업자등록번호 : {process.env.NEXT_PUBLIC_BIZ_REG_NO ?? ""}</p>
           <p>대표자 : {process.env.NEXT_PUBLIC_REPRESENTATIVE ?? ""}</p>
           <p>{process.env.NEXT_PUBLIC_ADDRESS ?? ""}</p>
