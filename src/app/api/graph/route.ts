@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { withOptionalAuth, withAuth } from "@/lib/api-auth";
+import { withOptionalAuth } from "@/lib/api-auth";
 import { getDriver } from "@/lib/neo4j";
 import type { GraphData, GraphNode, GraphLink } from "@/types/graph";
 
@@ -69,7 +69,7 @@ export const GET = withOptionalAuth(async (_request, _ctx) => {
 });
 
 // POST: 노드 추가 및 관계 생성
-export const POST = withAuth(async (request) => {
+export const POST = withOptionalAuth(async (request) => {
   const driver = getDriver();
   if (!driver) {
     return NextResponse.json({ error: "Neo4j not configured" }, { status: 500 });
