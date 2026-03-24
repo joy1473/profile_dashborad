@@ -4,22 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import { Plus, Video, Clock, CalendarDays, List, Loader2, X, Trash2 } from "lucide-react";
-import dynamic from "next/dynamic";
-
-const ScheduleCalendar = dynamic(() => import("@/components/calendar/schedule-calendar"), { ssr: false });
-
-interface CalendarEvent {
-  id: string;
-  title: string;
-  description: string;
-  start_at: string;
-  end_at: string;
-  all_day: boolean;
-  color: string;
-  meeting_room_name: string | null;
-  created_by: string;
-  created_by_name: string;
-}
+import { EventCalendar } from "@/components/calendar/event-calendar";
+import type { CalendarEvent } from "@/components/calendar/event-calendar";
 
 interface Meeting {
   id: string;
@@ -37,15 +23,25 @@ export default function DashboardPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState("");
 
-  // 새 일정 폼
+  // 수정 모달
+  const [editEvent, setEditEvent] = useState<CalendarEvent | null>(null);
+
+  // 새 일정 / 수정 폼
   const [form, setForm] = useState({
     title: "",
     description: "",
-    start: "",
-    end: "",
+    startDate: "",
+    startTime: "09:00",
+    endDate: "",
+    endTime: "10:00",
     allDay: false,
     color: "#3b82f6",
     meetingRoomName: "",
+  });
+
+  const resetForm = () => setForm({
+    title: "", description: "", startDate: "", startTime: "09:00", endDate: "", endTime: "10:00",
+    allDay: false, color: "#3b82f6", meetingRoomName: "",
   });
 
   const fetchEvents = useCallback(async () => {
@@ -53,7 +49,7 @@ export default function DashboardPage() {
       .from("events")
       .select("*")
       .order("start_at", { ascending: true });
-    console.log("[EVENTS] fetch:", data?.length, "건", error?.message);
+    if (error) console.error("[EVENTS]", error.message);
     if (data) setEvents(data);
     setLoading(false);
   }, []);
@@ -78,14 +74,21 @@ export default function DashboardPage() {
     fetchMeetings();
   }, [fetchEvents, fetchMeetings]);
 
+  function buildTimestamp(date: string, time: string): string {
+    return new Date(`${date}T${time}`).toISOString();
+  }
+
   const createEvent = async () => {
-    if (!form.title.trim() || !form.start || !form.end || !userId) return;
+    if (!form.title.trim() || !form.startDate || !form.endDate || !userId) return;
+
+    const startAt = buildTimestamp(form.startDate, form.allDay ? "00:00" : form.startTime);
+    const endAt = buildTimestamp(form.endDate, form.allDay ? "23:59" : form.endTime);
 
     const { error } = await supabase.from("events").insert({
       title: form.title.trim(),
       description: form.description.trim(),
-      start_at: new Date(form.start).toISOString(),
-      end_at: new Date(form.end).toISOString(),
+      start_at: startAt,
+      end_at: endAt,
       all_day: form.allDay,
       color: form.color,
       meeting_room_name: form.meetingRoomName || null,
@@ -94,39 +97,72 @@ export default function DashboardPage() {
     });
 
     if (!error) {
-      // 알림 생성 (모든 로그인 사용자에게)
       await createNotificationForAll(
         `새 일정: ${form.title.trim()}`,
-        `${userName}님이 일정을 등록했습니다. ${formatDateTime(form.start)}`,
+        `${userName}님이 일정을 등록했습니다. ${formatDateTime(startAt)}`,
         form.meetingRoomName ? `/settings?join=${form.meetingRoomName}` : "/dashboard"
       );
-
-      setForm({ title: "", description: "", start: "", end: "", allDay: false, color: "#3b82f6", meetingRoomName: "" });
+      resetForm();
       setShowCreate(false);
       fetchEvents();
     }
   };
 
+  const updateEvent = async () => {
+    if (!editEvent || !form.title.trim() || !form.startDate || !form.endDate) return;
+
+    const startAt = buildTimestamp(form.startDate, form.allDay ? "00:00" : form.startTime);
+    const endAt = buildTimestamp(form.endDate, form.allDay ? "23:59" : form.endTime);
+
+    await supabase.from("events").update({
+      title: form.title.trim(),
+      description: form.description.trim(),
+      start_at: startAt,
+      end_at: endAt,
+      all_day: form.allDay,
+      color: form.color,
+      meeting_room_name: form.meetingRoomName || null,
+    }).eq("id", editEvent.id);
+
+    setEditEvent(null);
+    resetForm();
+    fetchEvents();
+  };
+
   const deleteEvent = async (id: string) => {
     await supabase.from("events").delete().eq("id", id);
+    setEditEvent(null);
+    resetForm();
     setEvents((prev) => prev.filter((e) => e.id !== id));
   };
 
-  const handleEventUpdate = async (eventId: string, start: string, end: string) => {
-    await supabase.from("events").update({
-      start_at: start,
-      end_at: end,
-    }).eq("id", eventId);
-    fetchEvents();
+  const openEditModal = (ev: CalendarEvent) => {
+    const start = new Date(ev.start_at);
+    const end = new Date(ev.end_at);
+    setForm({
+      title: ev.title,
+      description: ev.description || "",
+      startDate: toDateStr(start),
+      startTime: toTimeStr(start),
+      endDate: toDateStr(end),
+      endTime: toTimeStr(end),
+      allDay: ev.all_day,
+      color: ev.color,
+      meetingRoomName: ev.meeting_room_name || "",
+    });
+    setEditEvent(ev);
   };
 
   // 오늘 & 이번주 일정
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const weekEnd = new Date(now);
   weekEnd.setDate(weekEnd.getDate() + 7);
 
-  const todayEvents = events.filter((e) => e.start_at.slice(0, 10) === todayStr);
+  const todayEvents = events.filter((e) => {
+    const d = new Date(e.start_at);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` === todayStr;
+  });
   const weekEvents = events.filter((e) => {
     const d = new Date(e.start_at);
     return d >= now && d <= weekEnd;
@@ -152,7 +188,7 @@ export default function DashboardPage() {
             </button>
           </div>
           <button
-            onClick={() => setShowCreate(true)}
+            onClick={() => { resetForm(); setShowCreate(true); setEditEvent(null); }}
             className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
             <Plus size={16} /> 새 일정
@@ -160,12 +196,16 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 일정 생성 폼 */}
-      {showCreate && (
+      {/* 일정 생성/수정 폼 */}
+      {(showCreate || editEvent) && (
         <Card className="mb-4">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">새 일정 만들기</h3>
-            <button onClick={() => setShowCreate(false)} className="p-1 text-zinc-400 hover:text-zinc-600"><X size={18} /></button>
+            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              {editEvent ? "일정 수정" : "새 일정 만들기"}
+            </h3>
+            <button onClick={() => { setShowCreate(false); setEditEvent(null); resetForm(); }} className="p-1 text-zinc-400 hover:text-zinc-600">
+              <X size={18} />
+            </button>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -178,23 +218,45 @@ export default function DashboardPage() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-zinc-500">시작</label>
+              <label className="mb-1 block text-xs text-zinc-500">시작일</label>
               <input
-                type="datetime-local"
-                value={form.start}
-                onChange={(e) => setForm({ ...form, start: e.target.value })}
+                type="date"
+                value={form.startDate}
+                onChange={(e) => setForm({ ...form, startDate: e.target.value, endDate: form.endDate || e.target.value })}
                 className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-zinc-500">종료</label>
+              <label className="mb-1 block text-xs text-zinc-500">종료일</label>
               <input
-                type="datetime-local"
-                value={form.end}
-                onChange={(e) => setForm({ ...form, end: e.target.value })}
+                type="date"
+                value={form.endDate}
+                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
                 className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
               />
             </div>
+            {!form.allDay && (
+              <>
+                <div>
+                  <label className="mb-1 block text-xs text-zinc-500">시작 시간</label>
+                  <input
+                    type="time"
+                    value={form.startTime}
+                    onChange={(e) => setForm({ ...form, startTime: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-zinc-500">종료 시간</label>
+                  <input
+                    type="time"
+                    value={form.endTime}
+                    onChange={(e) => setForm({ ...form, endTime: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  />
+                </div>
+              </>
+            )}
             <div className="sm:col-span-2">
               <textarea
                 value={form.description}
@@ -237,12 +299,20 @@ export default function DashboardPage() {
               종일
             </label>
             <div className="flex-1" />
+            {editEvent && editEvent.created_by === userId && (
+              <button
+                onClick={() => deleteEvent(editEvent.id)}
+                className="flex items-center gap-1 rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+              >
+                <Trash2 size={14} /> 삭제
+              </button>
+            )}
             <button
-              onClick={createEvent}
-              disabled={!form.title.trim() || !form.start || !form.end}
+              onClick={editEvent ? updateEvent : createEvent}
+              disabled={!form.title.trim() || !form.startDate || !form.endDate}
               className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              만들기
+              {editEvent ? "수정" : "만들기"}
             </button>
           </div>
         </Card>
@@ -254,14 +324,11 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-          {/* 캘린더 / 리스트 */}
           <div>
             {viewMode === "calendar" ? (
-              <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-                <div className="h-[600px] sx-calendar-wrapper">
-                  <ScheduleCalendar events={events} onEventUpdate={handleEventUpdate} />
-                </div>
-              </div>
+              <Card>
+                <EventCalendar events={events} onEventClick={openEditModal} />
+              </Card>
             ) : (
               <Card>
                 <h3 className="mb-3 text-sm font-semibold text-zinc-500">전체 일정</h3>
@@ -270,7 +337,7 @@ export default function DashboardPage() {
                 ) : (
                   <div className="space-y-2">
                     {events.map((ev) => (
-                      <EventItem key={ev.id} event={ev} userId={userId} onDelete={deleteEvent} />
+                      <EventListItem key={ev.id} event={ev} userId={userId} onClick={() => openEditModal(ev)} />
                     ))}
                   </div>
                 )}
@@ -278,7 +345,7 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* 사이드바: 오늘/이번주 일정 */}
+          {/* 사이드바 */}
           <div className="space-y-4">
             <Card>
               <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
@@ -289,7 +356,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="space-y-2">
                   {todayEvents.map((ev) => (
-                    <MiniEventItem key={ev.id} event={ev} />
+                    <MiniEventItem key={ev.id} event={ev} onClick={() => openEditModal(ev)} />
                   ))}
                 </div>
               )}
@@ -303,7 +370,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="space-y-2">
                   {weekEvents.map((ev) => (
-                    <MiniEventItem key={ev.id} event={ev} />
+                    <MiniEventItem key={ev.id} event={ev} onClick={() => openEditModal(ev)} />
                   ))}
                 </div>
               )}
@@ -315,20 +382,17 @@ export default function DashboardPage() {
   );
 }
 
-function EventItem({ event, userId, onDelete }: { event: CalendarEvent; userId: string | null; onDelete: (id: string) => void }) {
+function EventListItem({ event, userId, onClick }: { event: CalendarEvent; userId: string | null; onClick: () => void }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-zinc-100 p-3 dark:border-zinc-800">
+    <button onClick={onClick} className="flex w-full items-center gap-3 rounded-lg border border-zinc-100 p-3 text-left hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50">
       <div className="h-10 w-1 rounded-full" style={{ backgroundColor: event.color }} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50 truncate">{event.title}</p>
           {event.meeting_room_name && (
-            <a
-              href={`/settings?join=${event.meeting_room_name}`}
-              className="flex items-center gap-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300"
-            >
+            <span className="flex items-center gap-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
               <Video size={10} /> 회의
-            </a>
+            </span>
           )}
         </div>
         <p className="text-xs text-zinc-500">
@@ -336,29 +400,22 @@ function EventItem({ event, userId, onDelete }: { event: CalendarEvent; userId: 
         </p>
         {event.description && <p className="mt-1 text-xs text-zinc-400 truncate">{event.description}</p>}
       </div>
-      {event.created_by === userId && (
-        <button onClick={() => onDelete(event.id)} className="p-1 text-zinc-400 hover:text-red-500">
-          <Trash2 size={14} />
-        </button>
-      )}
-    </div>
+    </button>
   );
 }
 
-function MiniEventItem({ event }: { event: CalendarEvent }) {
+function MiniEventItem({ event, onClick }: { event: CalendarEvent; onClick: () => void }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className="h-2 w-2 rounded-full" style={{ backgroundColor: event.color }} />
+    <button onClick={onClick} className="flex w-full items-center gap-2 rounded p-1 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800">
+      <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: event.color }} />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate">{event.title}</p>
         <p className="text-[10px] text-zinc-400">{formatTime(event.start_at)}</p>
       </div>
       {event.meeting_room_name && (
-        <a href={`/settings?join=${event.meeting_room_name}`} className="text-blue-500 hover:text-blue-700">
-          <Video size={12} />
-        </a>
+        <Video size={12} className="text-blue-500 shrink-0" />
       )}
-    </div>
+    </button>
   );
 }
 
@@ -370,8 +427,15 @@ function formatTime(dt: string): string {
   return new Date(dt).toLocaleString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function toTimeStr(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 async function createNotificationForAll(title: string, body: string, link: string) {
-  // 모든 프로필 사용자에게 알림 생성
   const { data: profiles } = await supabase.from("profiles").select("id");
   if (!profiles) return;
   const notifications = profiles.map((p) => ({
