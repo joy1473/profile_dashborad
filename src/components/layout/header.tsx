@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Search, Bell, Sun, Moon, Monitor, LogOut, Download, Share, X } from "lucide-react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { Search, Bell, Sun, Moon, Monitor, LogOut, Download, Share, X, Check } from "lucide-react";
 import { useDashboardStore } from "@/store/dashboard-store";
 import { useTheme } from "@/components/layout/theme-provider";
 import { supabase } from "@/lib/supabase";
@@ -10,6 +10,15 @@ import { getDisplayName, getAvatarUrl, signOut } from "@/lib/auth";
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
+interface Notification {
+  id: string;
+  title: string;
+  body: string;
+  link: string;
+  is_read: boolean;
+  created_at: string;
 }
 
 function isIOS() {
@@ -30,6 +39,34 @@ export function Header() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
+  // 알림
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
+
+  const fetchNotifications = useCallback(async () => {
+    const { data } = await supabase
+      .from("notifications")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (data) setNotifications(data);
+  }, []);
+
+  const markAsRead = async (id: string) => {
+    await supabase.from("notifications").update({ is_read: true }).eq("id", id);
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+  };
+
+  const markAllAsRead = async () => {
+    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    if (unreadIds.length === 0) return;
+    await supabase.from("notifications").update({ is_read: true }).in("id", unreadIds);
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+  };
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
@@ -38,19 +75,42 @@ export function Header() {
       }
     });
 
+    fetchNotifications();
+
+    // 실시간 알림 구독
+    const channel = supabase
+      .channel("notifications")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, () => {
+        fetchNotifications();
+      })
+      .subscribe();
+
     const handler = (e: Event) => {
       e.preventDefault();
       setInstallPrompt(e as BeforeInstallPromptEvent);
     };
     window.addEventListener("beforeinstallprompt", handler);
 
-    // iOS: show install guide if not already installed and not dismissed
     if (isIOS() && !isStandalone() && !sessionStorage.getItem("ios-pwa-dismissed")) {
       setShowIOSGuide(true);
     }
 
-    return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+      supabase.removeChannel(channel);
+    };
+  }, [fetchNotifications]);
+
+  // 바깥 클릭 시 알림 패널 닫기
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+    if (showNotifications) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showNotifications]);
 
   return (
     <>
@@ -94,10 +154,64 @@ export function Header() {
           {mode === "dark" && <Moon size={18} />}
           {mode === "system" && <Monitor size={18} />}
         </button>
-        <button className="relative rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" data-testid="notifications-btn" aria-label="알림">
-          <Bell size={18} />
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
-        </button>
+
+        {/* 알림 */}
+        <div className="relative" ref={notifRef}>
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            className="relative rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            data-testid="notifications-btn"
+            aria-label="알림"
+          >
+            <Bell size={18} />
+            {unreadCount > 0 && (
+              <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {showNotifications && (
+            <div className="absolute right-0 top-12 z-50 w-80 rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">알림</h3>
+                {unreadCount > 0 && (
+                  <button
+                    onClick={markAllAsRead}
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    <Check size={12} /> 모두 읽음
+                  </button>
+                )}
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-xs text-zinc-400">알림이 없습니다</p>
+                ) : (
+                  notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      onClick={() => {
+                        markAsRead(n.id);
+                        if (n.link) window.location.href = n.link;
+                      }}
+                      className={`cursor-pointer border-b border-zinc-50 px-4 py-3 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800 ${!n.is_read ? "bg-blue-50 dark:bg-blue-950" : ""}`}
+                    >
+                      <p className={`text-sm ${!n.is_read ? "font-semibold text-zinc-900 dark:text-zinc-50" : "text-zinc-600 dark:text-zinc-400"}`}>
+                        {n.title}
+                      </p>
+                      {n.body && <p className="mt-0.5 text-xs text-zinc-500">{n.body}</p>}
+                      <p className="mt-1 text-[10px] text-zinc-400">
+                        {new Date(n.created_at).toLocaleString("ko-KR")}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center gap-2">
           {avatarUrl ? (
             <img src={avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" data-testid="user-avatar" />

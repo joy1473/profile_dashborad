@@ -11,6 +11,11 @@
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
     "@jitsi/react-sdk": "^1.4.4",
+    "@schedule-x/calendar": "^4.3.1",
+    "@schedule-x/drag-and-drop": "^3.7.3",
+    "@schedule-x/events-service": "^4.3.1",
+    "@schedule-x/react": "^4.1.0",
+    "@schedule-x/theme-default": "^4.3.1",
     "@supabase/supabase-js": "^2.99.1",
     "cfb": "^1.2.2",
     "clsx": "^2.1.1",
@@ -29,6 +34,7 @@
     "react-force-graph-2d": "^1.29.1",
     "recharts": "^3.8.0",
     "tailwind-merge": "^3.5.0",
+    "temporal-polyfill": "^0.3.2",
     "uuid": "^13.0.0",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.11"
