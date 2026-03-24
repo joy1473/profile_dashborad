@@ -82,12 +82,21 @@ export const POST = withAuth(async (request) => {
   try {
     switch (action) {
       case "ensurePerson": {
-        // 로그인 사용자 Person 노드 생성/갱신
         const { userId, name, email, avatarUrl } = data;
         await session.run(
           `MERGE (p:Person {userId: $userId})
            SET p.name = $name, p.email = $email, p.avatarUrl = $avatarUrl`,
           { userId, name, email: email ?? "", avatarUrl: avatarUrl ?? "" }
+        );
+        return NextResponse.json({ ok: true });
+      }
+
+      case "updatePerson": {
+        const { userId, degree, gender, age, bio } = data;
+        await session.run(
+          `MATCH (p:Person {userId: $userId})
+           SET p.degree = $degree, p.gender = $gender, p.age = toInteger($age), p.bio = $bio`,
+          { userId, degree: degree ?? "", gender: gender ?? "", age: age ?? 0, bio: bio ?? "" }
         );
         return NextResponse.json({ ok: true });
       }

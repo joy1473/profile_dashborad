@@ -3,11 +3,19 @@
  * 실행: npx tsx scripts/neo4j-profile-seed.ts
  */
 import neo4j from 'neo4j-driver';
-import 'dotenv/config';
+import { readFileSync } from 'fs';
+
+// .env.local 수동 파싱
+const envContent = readFileSync('.env.local', 'utf-8');
+const env: Record<string, string> = {};
+for (const line of envContent.split('\n')) {
+  const [key, ...rest] = line.split('=');
+  if (key?.trim()) env[key.trim()] = rest.join('=').trim();
+}
 
 const driver = neo4j.driver(
-  process.env.NEO4J_URI!,
-  neo4j.auth.basic(process.env.NEO4J_USERNAME!, process.env.NEO4J_PASSWORD!)
+  env.NEO4J_URI,
+  neo4j.auth.basic(env.NEO4J_USERNAME, env.NEO4J_PASSWORD)
 );
 
 async function seed() {

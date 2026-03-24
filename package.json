@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@antv/g6": "^5.0.51",
+    "@antv/g6-extension-react": "^0.2.6",
     "@hello-pangea/dnd": "^18.0.1",
     "@jitsi/react-sdk": "^1.4.4",
     "@schedule-x/calendar": "^4.3.1",
