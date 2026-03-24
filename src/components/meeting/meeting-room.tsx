@@ -50,7 +50,7 @@ export function MeetingRoom({ roomName, displayName, meetingTitle, onLeave }: Me
       {/* Jitsi Meet */}
       <div className="flex-1">
         <JitsiMeeting
-          domain="meet.jit.si"
+          domain={process.env.NEXT_PUBLIC_JITSI_DOMAIN ?? "meet.ffmuc.net"}
           roomName={roomName}
           configOverwrite={{
             startWithAudioMuted: true,
