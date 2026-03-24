@@ -10,7 +10,6 @@ export default function KakaoCallbackPage() {
   const [debugLog, setDebugLog] = useState<string[]>([]);
 
   const log = (msg: string) => {
-    console.log(`[KAKAO CB] ${msg}`);
     setDebugLog((prev) => [...prev, `${new Date().toISOString().slice(11, 19)} ${msg}`]);
   };
 

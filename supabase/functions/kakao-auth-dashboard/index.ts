@@ -7,7 +7,6 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const ALLOWED_ORIGINS = [
   'https://profile-dashborad.vercel.app',
-  'http://localhost:3000',
 ]
 
 function getCorsHeaders(req: Request): Record<string, string> {

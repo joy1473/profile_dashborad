@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { useBidAnalyzerStore } from '@/store/bid-analyzer-store';
 import type { TextSelection, DocumentPosition } from '@/types/bid-analyzer';
 import { v4 as uuid } from 'uuid';
@@ -13,7 +14,7 @@ export function DocumentViewer() {
   // HTML 삽입
   useEffect(() => {
     if (contentRef.current && documentModel?.renderedHtml) {
-      contentRef.current.innerHTML = documentModel.renderedHtml;
+      contentRef.current.innerHTML = DOMPurify.sanitize(documentModel.renderedHtml, { ADD_ATTR: ['data-pos-id'] });
     }
   }, [documentModel?.renderedHtml]);
 

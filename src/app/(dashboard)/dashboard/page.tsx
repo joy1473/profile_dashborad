@@ -50,7 +50,7 @@ export default function DashboardPage() {
       .from("events")
       .select("*")
       .order("start_at", { ascending: true });
-    if (error) console.error("[EVENTS]", error.message);
+    if (error) { setLoading(false); return; }
     if (data) setEvents(data);
     setLoading(false);
   }, []);

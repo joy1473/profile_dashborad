@@ -38,7 +38,6 @@ export function UserPresence() {
         .limit(20);
 
       if (profilesError) {
-        console.warn("profiles 조회 실패:", profilesError.message);
         setUsers(mockPresence);
         return;
       }

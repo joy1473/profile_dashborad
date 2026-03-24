@@ -79,6 +79,7 @@ export function Sidebar() {
           <p>사업자등록번호 : {process.env.NEXT_PUBLIC_BIZ_REG_NO ?? ""}</p>
           <p>대표자 : {process.env.NEXT_PUBLIC_REPRESENTATIVE ?? ""}</p>
           <p>{process.env.NEXT_PUBLIC_ADDRESS ?? ""}</p>
+          <a href="/privacy" className="text-blue-500 hover:underline mt-1 inline-block">개인정보처리방침</a>
         </div>
       </aside>
     </>
