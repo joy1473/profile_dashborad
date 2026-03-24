@@ -97,11 +97,11 @@ export default function MeetingPage() {
 
   const shareKakao = (meeting: Meeting) => {
     const link = `${window.location.origin}/settings?join=${meeting.room_name}`;
-    const kakaoKey = process.env.NEXT_PUBLIC_KAKAO_REST_API_KEY;
+    const kakaoJsKey = process.env.NEXT_PUBLIC_KAKAO_JS_KEY;
 
     if (typeof window !== "undefined" && window.Kakao) {
-      if (!window.Kakao.isInitialized() && kakaoKey) {
-        window.Kakao.init(kakaoKey);
+      if (!window.Kakao.isInitialized() && kakaoJsKey) {
+        window.Kakao.init(kakaoJsKey);
       }
       window.Kakao.Share.sendDefault({
         objectType: "feed",
