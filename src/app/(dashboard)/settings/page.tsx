@@ -144,6 +144,7 @@ export default function MeetingPage() {
         displayName={userName}
         meetingTitle={activeMeeting.title}
         onLeave={leaveMeeting}
+        onExit={() => { setActiveMeeting(null); fetchMeetings(); }}
       />
     );
   }
