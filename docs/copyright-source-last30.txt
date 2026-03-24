@@ -1,3 +1,84 @@
+import { logActivity } from "./activities";
+import { syncIssueCreate, syncIssueUpdate, syncIssueDelete } from "./neo4j-sync";
+import type { Issue, IssueStatus, CreateIssueInput, UpdateIssueInput } from "@/types/issue";
+
+const USE_MOCK = !process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+// ---------- Mock helpers (fallback when Supabase is not configured) ----------
+
+const mockStore = {
+  issues: [...mockIssues],
+  nextId: 100,
+  reset() {
+    this.issues = [...mockIssues];
+    this.nextId = 100;
+  },
+};
+
+function mockFetch(): Issue[] {
+  return [...mockStore.issues].sort((a, b) => {
+    if (a.status !== b.status) return a.status.localeCompare(b.status);
+    return a.position - b.position;
+  });
+}
+
+// ---------- Public API ----------
+
+export async function fetchIssues(): Promise<Issue[]> {
+  if (USE_MOCK) return mockFetch();
+
+  const { data, error } = await supabase
+    .from("issues")
+    .select("*")
+    .order("status")
+    .order("position");
+  if (error) throw error;
+  return data;
+}
+
+export async function createIssue(input: CreateIssueInput): Promise<Issue> {
+  if (USE_MOCK) {
+    const now = new Date().toISOString();
+    const status = input.status ?? "todo";
+    const position = mockStore.issues.filter((i) => i.status === status).length;
+    const issue: Issue = {
+      id: String(mockStore.nextId++),
+      title: input.title,
+      description: input.description ?? "",
+      status,
+      priority: input.priority,
+      assignee_id: input.assignee_id ?? null,
+      assignee_name: input.assignee_name ?? null,
+      labels: input.labels ?? [],
+      due_date: input.due_date ?? null,
+      position,
+      user_id: "current-user",
+      created_at: now,
+      updated_at: now,
+    };
+    mockStore.issues.push(issue);
+    return issue;
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const status = input.status ?? "todo";
+  const { count } = await supabase
+    .from("issues")
+    .select("*", { count: "exact", head: true })
+    .eq("status", status);
+
+  const { data, error } = await supabase
+    .from("issues")
+    .insert({
+      ...input,
+      status,
+      position: count ?? 0,
+      user_id: user.id,
+    })
     .select()
     .single();
   if (error) throw error;
@@ -1375,87 +1456,6 @@ export interface IssueLink {
   url: string;
   label: string | null;
   created_at: string;
-}
-
-
-======================================================================
-// 파일: src/types/report.ts
-======================================================================
-// ── Template 정의 ──
-
-export interface FieldDef {
-  key: string;
-  label: string;
-  type: "string" | "number" | "date";
-  question: string;
-}
-
-export interface ChartDef {
-  type: "bar" | "line" | "area" | "pie";
-  xKey: string;
-  yKeys: string[];
-  title: string;
-  colors?: string[];
-}
-
-export interface ReportTemplate {
-  id: string;
-  name: string;
-  description: string;
-  requiredFields: FieldDef[];
-  optionalFields: FieldDef[];
-  charts: ChartDef[];
-  tableColumns?: string[];
-}
-
-// ── Report 데이터 ──
-
-export interface QaResponse {
-  fieldKey: string;
-  question: string;
-  answer: string;
-  answeredAt: string;
-}
-
-export interface Report {
-  id: string;
-  issue_id: string | null;
-  template_id: string;
-  title: string;
-  data: Record<string, string | number>[];
-  chart_config: ChartDef[];
-  qa_responses: QaResponse[];
-  version: number;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ReportHistory {
-  id: string;
-  report_id: string;
-  version: number;
-  data: Record<string, string | number>[];
-  chart_config: ChartDef[];
-  qa_responses: QaResponse[];
-  change_note: string | null;
-  created_by: string | null;
-  created_at: string;
-}
-
-// ── 파싱 결과 ──
-
-export interface ParsedData {
-  headers: string[];
-  rows: Record<string, string | number>[];
-  fileName: string;
-}
-
-// ── 필드 매칭 결과 ──
-
-export interface FieldMatchResult {
-  matched: { field: FieldDef; column: string }[];
-  missing: FieldDef[];
 }
 
 
