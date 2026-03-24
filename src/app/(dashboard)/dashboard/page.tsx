@@ -49,10 +49,11 @@ export default function DashboardPage() {
   });
 
   const fetchEvents = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("events")
       .select("*")
       .order("start_at", { ascending: true });
+    console.log("[EVENTS] fetch:", data?.length, "건", error?.message);
     if (data) setEvents(data);
     setLoading(false);
   }, []);
@@ -256,11 +257,11 @@ export default function DashboardPage() {
           {/* 캘린더 / 리스트 */}
           <div>
             {viewMode === "calendar" ? (
-              <Card className="p-0 overflow-hidden">
-                <div className="h-[600px]">
+              <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="h-[600px] sx-calendar-wrapper">
                   <ScheduleCalendar events={events} onEventUpdate={handleEventUpdate} />
                 </div>
-              </Card>
+              </div>
             ) : (
               <Card>
                 <h3 className="mb-3 text-sm font-semibold text-zinc-500">전체 일정</h3>

@@ -31,3 +31,16 @@ html.theme-transition *::before,
 html.theme-transition *::after {
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease !important;
 }
+
+/* Schedule-X 캘린더: 날짜 팝업이 잘리지 않도록 */
+.sx-calendar-wrapper {
+  position: relative;
+  overflow: visible !important;
+}
+.sx-calendar-wrapper .sx__calendar-wrapper {
+  overflow: visible !important;
+}
+.sx-calendar-wrapper .sx__date-picker-popup,
+.sx-calendar-wrapper .sx__forward-backward-navigation {
+  z-index: 50;
+}
