@@ -1,3 +1,236 @@
+    .select()
+    .single();
+  if (error) throw error;
+
+  logActivity(user.id, user.user_metadata?.name ?? "Unknown", "이슈 생성", data.title);
+  syncIssueCreate(data);
+
+  return data;
+}
+
+export async function updateIssue(id: string, input: UpdateIssueInput): Promise<Issue> {
+  if (USE_MOCK) {
+    const idx = mockStore.issues.findIndex((i) => i.id === id);
+    if (idx === -1) throw new Error("Issue not found");
+    mockStore.issues[idx] = { ...mockStore.issues[idx], ...input, updated_at: new Date().toISOString() };
+    return mockStore.issues[idx];
+  }
+
+  const { data, error } = await supabase
+    .from("issues")
+    .update(input)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+
+  logActivity(null, "System", "이슈 수정", data.title);
+  syncIssueUpdate(data);
+
+  return data;
+}
+
+export async function deleteIssue(id: string): Promise<void> {
+  if (USE_MOCK) {
+    mockStore.issues = mockStore.issues.filter((i) => i.id !== id);
+    return;
+  }
+
+  const { error } = await supabase.from("issues").delete().eq("id", id);
+  if (error) throw error;
+
+  logActivity(null, "System", "이슈 삭제", id);
+  syncIssueDelete(id);
+}
+
+export async function moveIssue(id: string, status: IssueStatus, position: number): Promise<Issue> {
+  return updateIssue(id, { status, position });
+}
+
+export async function reorderIssues(updates: { id: string; position: number }[]): Promise<void> {
+  if (USE_MOCK) {
+    for (const u of updates) {
+      const idx = mockStore.issues.findIndex((i) => i.id === u.id);
+      if (idx !== -1) mockStore.issues[idx].position = u.position;
+    }
+    return;
+  }
+
+  // Batch update positions in chunks of 10
+  const CHUNK_SIZE = 10;
+  for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+    const chunk = updates.slice(i, i + CHUNK_SIZE);
+    await Promise.all(
+      chunk.map(({ id, position }) =>
+        supabase.from("issues").update({ position }).eq("id", id)
+      )
+    );
+  }
+}
+
+
+======================================================================
+// 파일: src/lib/kakao-auth.ts
+======================================================================
+import { supabase } from "./supabase";
+
+const KAKAO_REST_API_KEY = process.env.NEXT_PUBLIC_KAKAO_REST_API_KEY ?? "";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+
+export function redirectToKakaoLogin(): void {
+  const state = crypto.randomUUID();
+  // localStorage로 변경 — 모바일 인앱 브라우저/새 탭에서도 state 유지
+  localStorage.setItem("kakao_oauth_state", state);
+
+  const redirectUri = `${window.location.origin}/auth/kakao/callback`;
+  const params = new URLSearchParams({
+    client_id: KAKAO_REST_API_KEY,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    state,
+  });
+  window.location.href = `https://kauth.kakao.com/oauth/authorize?${params}`;
+}
+
+export function isKakaoCallback(): boolean {
+  return window.location.pathname === "/auth/kakao/callback" && window.location.search.includes("code=");
+}
+
+export async function handleKakaoCallback(): Promise<boolean> {
+  const params = new URLSearchParams(window.location.search);
+
+  // 카카오가 에러로 리다이렉트한 경우 (개발모드 차단, 사용자 취소 등)
+  const kakaoError = params.get("error");
+  const kakaoErrorDesc = params.get("error_description");
+  if (kakaoError) {
+    const msg = kakaoErrorDesc || kakaoError;
+    throw new Error(`카카오 인증 실패: ${msg}`);
+  }
+
+  const code = params.get("code");
+  const state = params.get("state");
+  const savedState = localStorage.getItem("kakao_oauth_state");
+
+  if (!code) return false;
+
+  // CSRF 검증 — savedState 없으면 거부
+  if (!savedState || state !== savedState) {
+    throw new Error("CSRF 검증 실패: 다른 탭에서 로그인을 시도했거나 세션이 만료되었습니다.");
+  }
+  localStorage.removeItem("kakao_oauth_state");
+
+  const redirectUri = `${window.location.origin}/auth/kakao/callback`;
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/kakao-auth-dashboard`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ code, redirect_uri: redirectUri }),
+  });
+
+  if (!res.ok) {
+    let errorMsg = "카카오 로그인 실패";
+    try {
+      const err = await res.json();
+      errorMsg = err.error ?? errorMsg;
+    } catch {
+      errorMsg = `서버 오류 (${res.status})`;
+    }
+    throw new Error(errorMsg);
+  }
+
+  const { token, type } = await res.json();
+
+  const { error } = await supabase.auth.verifyOtp({
+    token_hash: token,
+    type: type ?? "magiclink",
+  });
+
+  if (error) {
+    throw new Error(`세션 생성 실패: ${error.message}`);
+  }
+
+  // 세션이 안정화될 때까지 대기 — layout auth guard와의 레이스 컨디션 방지
+  let retries = 0;
+  while (retries < 10) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) return true;
+    await new Promise((r) => setTimeout(r, 200));
+    retries++;
+  }
+  return true;
+}
+
+
+======================================================================
+// 파일: src/lib/links.ts
+======================================================================
+import { supabase } from "./supabase";
+import type { IssueLink } from "@/types/link";
+
+export async function fetchLinks(issueId: string): Promise<IssueLink[]> {
+  const { data, error } = await supabase
+    .from("issue_links")
+    .select("*")
+    .eq("issue_id", issueId)
+    .order("created_at", { ascending: false });
+  if (error) return [];
+  return data ?? [];
+}
+
+export async function createLink(
+  issueId: string,
+  url: string,
+  label?: string,
+): Promise<IssueLink> {
+  const { data, error } = await supabase
+    .from("issue_links")
+    .insert({
+      issue_id: issueId,
+      url,
+      label: label?.trim() || null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteLink(id: string): Promise<void> {
+  await supabase.from("issue_links").delete().eq("id", id);
+}
+
+export async function fetchLinkCounts(issueIds: string[]): Promise<Map<string, number>> {
+  if (issueIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from("issue_links")
+    .select("issue_id")
+    .in("issue_id", issueIds);
+  if (error) return new Map();
+  const counts = new Map<string, number>();
+  for (const row of data ?? []) {
+    counts.set(row.issue_id, (counts.get(row.issue_id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+export function extractDomain(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
+
+======================================================================
+// 파일: src/lib/metrics.ts
+======================================================================
+import { supabase } from "./supabase";
+import { metrics as mockMetrics, revenueData as mockRevenueData } from "./mock-data";
 import type { MetricCard, ChartData } from "@/types";
 
 const USE_MOCK = !process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -115,67 +348,6 @@ export const activities: Activity[] = [
   { id: "4", user: "최유리", action: "팀원 초대", target: "dev@example.com", timestamp: "2시간 전" },
   { id: "5", user: "정하늘", action: "대시보드 생성", target: "KPI 트래커", timestamp: "3시간 전" },
 ];
-
-
-======================================================================
-// 파일: src/lib/mock-graph.ts
-======================================================================
-import type { GraphData } from "@/types/graph";
-
-export const mockGraphData: GraphData = {
-  nodes: [
-    // Users (from mock-data.ts)
-    { id: "user-1", name: "김민수", type: "user", meta: { email: "minsu@example.com", role: "admin", status: "active" } },
-    { id: "user-2", name: "이지은", type: "user", meta: { email: "jieun@example.com", role: "user", status: "active" } },
-    { id: "user-3", name: "박서준", type: "user", meta: { email: "seojun@example.com", role: "user", status: "inactive" } },
-    { id: "user-4", name: "최유리", type: "user", meta: { email: "yuri@example.com", role: "viewer", status: "active" } },
-    { id: "user-5", name: "정하늘", type: "user", meta: { email: "haneul@example.com", role: "user", status: "active" } },
-
-    // Issues (from mock-issues.ts)
-    { id: "issue-1", name: "로그인 페이지 오류 수정", type: "issue", meta: { status: "todo", priority: "high" } },
-    { id: "issue-2", name: "대시보드 차트 반응형 개선", type: "issue", meta: { status: "in_progress", priority: "medium" } },
-    { id: "issue-3", name: "QR 명함 공유 기능", type: "issue", meta: { status: "todo", priority: "medium" } },
-    { id: "issue-4", name: "사용자 목록 페이지네이션", type: "issue", meta: { status: "done", priority: "low" } },
-    { id: "issue-5", name: "다크모드 색상 통일", type: "issue", meta: { status: "done", priority: "low" } },
-    { id: "issue-6", name: "설정 페이지 알림 토글 버그", type: "issue", meta: { status: "in_review", priority: "high" } },
-
-    // Labels
-    { id: "label-bug", name: "bug", type: "label", meta: { color: "#ef4444" } },
-    { id: "label-auth", name: "auth", type: "label", meta: { color: "#8b5cf6" } },
-    { id: "label-ui", name: "ui", type: "label", meta: { color: "#3b82f6" } },
-    { id: "label-responsive", name: "responsive", type: "label", meta: { color: "#06b6d4" } },
-    { id: "label-feature", name: "feature", type: "label", meta: { color: "#22c55e" } },
-    { id: "label-enhancement", name: "enhancement", type: "label", meta: { color: "#f59e0b" } },
-    { id: "label-darkmode", name: "darkmode", type: "label", meta: { color: "#6366f1" } },
-  ],
-  links: [
-    // ASSIGNED_TO (user -> issue)
-    { source: "user-1", target: "issue-1", type: "ASSIGNED_TO" },
-    { source: "user-2", target: "issue-2", type: "ASSIGNED_TO" },
-    { source: "user-4", target: "issue-4", type: "ASSIGNED_TO" },
-    { source: "user-1", target: "issue-5", type: "ASSIGNED_TO" },
-    { source: "user-2", target: "issue-6", type: "ASSIGNED_TO" },
-
-    // CREATED_BY (issue -> user)
-    { source: "issue-1", target: "user-1", type: "CREATED_BY" },
-    { source: "issue-2", target: "user-1", type: "CREATED_BY" },
-    { source: "issue-3", target: "user-1", type: "CREATED_BY" },
-    { source: "issue-4", target: "user-1", type: "CREATED_BY" },
-    { source: "issue-5", target: "user-1", type: "CREATED_BY" },
-    { source: "issue-6", target: "user-1", type: "CREATED_BY" },
-
-    // LABELED_WITH (issue -> label)
-    { source: "issue-1", target: "label-bug", type: "LABELED_WITH" },
-    { source: "issue-1", target: "label-auth", type: "LABELED_WITH" },
-    { source: "issue-2", target: "label-ui", type: "LABELED_WITH" },
-    { source: "issue-2", target: "label-responsive", type: "LABELED_WITH" },
-    { source: "issue-3", target: "label-feature", type: "LABELED_WITH" },
-    { source: "issue-4", target: "label-enhancement", type: "LABELED_WITH" },
-    { source: "issue-5", target: "label-ui", type: "LABELED_WITH" },
-    { source: "issue-5", target: "label-darkmode", type: "LABELED_WITH" },
-    { source: "issue-6", target: "label-bug", type: "LABELED_WITH" },
-  ],
-};
 
 
 ======================================================================
@@ -386,178 +558,6 @@ export function getDriver(): Driver | null {
     driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
   }
   return driver;
-}
-
-
-======================================================================
-// 파일: src/lib/reports.ts
-======================================================================
-import { supabase } from "./supabase";
-import type { Report, ReportHistory, ChartDef, QaResponse } from "@/types/report";
-
-const USE_MOCK = !process.env.NEXT_PUBLIC_SUPABASE_URL;
-
-function mapReport(row: Record<string, unknown>): Report {
-  return {
-    id: row.id as string,
-    issue_id: (row.issue_id as string) ?? null,
-    template_id: row.template_id as string,
-    title: row.title as string,
-    data: (row.data as Record<string, string | number>[]) ?? [],
-    chart_config: (row.chart_config as ChartDef[]) ?? [],
-    qa_responses: (row.qa_responses as QaResponse[]) ?? [],
-    version: (row.version as number) ?? 1,
-    created_by: (row.created_by as string) ?? null,
-    created_at: (row.created_at as string) ?? "",
-    updated_at: (row.updated_at as string) ?? "",
-  };
-}
-
-function mapHistory(row: Record<string, unknown>): ReportHistory {
-  return {
-    id: row.id as string,
-    report_id: row.report_id as string,
-    version: (row.version as number) ?? 1,
-    data: (row.data as Record<string, string | number>[]) ?? [],
-    chart_config: (row.chart_config as ChartDef[]) ?? [],
-    qa_responses: (row.qa_responses as QaResponse[]) ?? [],
-    change_note: (row.change_note as string) ?? null,
-    created_by: (row.created_by as string) ?? null,
-    created_at: (row.created_at as string) ?? "",
-  };
-}
-
-export async function fetchReports(): Promise<Report[]> {
-  if (USE_MOCK) return [];
-  const { data, error } = await supabase
-    .from("reports")
-    .select("*")
-    .order("updated_at", { ascending: false });
-  if (error) return [];
-  return (data ?? []).map(mapReport);
-}
-
-export async function fetchReportsByIssueId(issueId: string): Promise<Report[]> {
-  if (USE_MOCK) return [];
-  const { data, error } = await supabase
-    .from("reports")
-    .select("*")
-    .eq("issue_id", issueId)
-    .order("updated_at", { ascending: false });
-  if (error) return [];
-  return (data ?? []).map(mapReport);
-}
-
-export async function fetchReport(id: string): Promise<Report | null> {
-  if (USE_MOCK) return null;
-  const { data, error } = await supabase
-    .from("reports")
-    .select("*")
-    .eq("id", id)
-    .single();
-  if (error || !data) return null;
-  return mapReport(data);
-}
-
-export interface CreateReportInput {
-  issue_id?: string | null;
-  template_id: string;
-  title: string;
-  data: Record<string, string | number>[];
-  chart_config: ChartDef[];
-  qa_responses?: QaResponse[];
-}
-
-export async function createReport(input: CreateReportInput): Promise<Report> {
-  const { data: { user } } = await supabase.auth.getUser();
-
-  const { data, error } = await supabase
-    .from("reports")
-    .insert({
-      issue_id: input.issue_id || null,
-      template_id: input.template_id,
-      title: input.title,
-      data: input.data,
-      chart_config: input.chart_config,
-      qa_responses: input.qa_responses ?? [],
-      version: 1,
-      created_by: user?.id ?? null,
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(error.message);
-  return mapReport(data);
-}
-
-export interface UpdateReportInput {
-  title?: string;
-  data?: Record<string, string | number>[];
-  chart_config?: ChartDef[];
-  qa_responses?: QaResponse[];
-  change_note?: string;
-}
-
-export async function updateReport(
-  id: string,
-  input: UpdateReportInput,
-): Promise<Report> {
-  const { data: { user } } = await supabase.auth.getUser();
-
-  // 1. 현재 버전을 이력에 저장 + 업데이트를 한 트랜잭션처럼 처리
-  const current = await fetchReport(id);
-  if (!current) throw new Error("Report not found");
-
-  // 2. 리포트 업데이트 (version 조건으로 optimistic lock)
-  const updateData: Record<string, unknown> = {
-    version: current.version + 1,
-    updated_at: new Date().toISOString(),
-  };
-  if (input.title !== undefined) updateData.title = input.title;
-  if (input.data !== undefined) updateData.data = input.data;
-  if (input.chart_config !== undefined) updateData.chart_config = input.chart_config;
-  if (input.qa_responses !== undefined) updateData.qa_responses = input.qa_responses;
-
-  const { data, error } = await supabase
-    .from("reports")
-    .update(updateData)
-    .eq("id", id)
-    .eq("version", current.version) // optimistic lock: 버전 불일치 시 업데이트 실패
-    .select()
-    .single();
-
-  if (error || !data) {
-    throw new Error("동시 수정이 감지되었습니다. 페이지를 새로고침하세요.");
-  }
-
-  // 3. 업데이트 성공 후 이력 저장 (실패해도 데이터 무결성에 영향 없음)
-  await supabase.from("report_histories").insert({
-    report_id: id,
-    version: current.version,
-    data: current.data,
-    chart_config: current.chart_config,
-    qa_responses: current.qa_responses,
-    change_note: input.change_note ?? null,
-    created_by: user?.id ?? null,
-  });
-
-  return mapReport(data);
-}
-
-export async function deleteReport(id: string): Promise<void> {
-  const { error } = await supabase.from("reports").delete().eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-export async function fetchReportHistories(reportId: string): Promise<ReportHistory[]> {
-  if (USE_MOCK) return [];
-  const { data, error } = await supabase
-    .from("report_histories")
-    .select("*")
-    .eq("report_id", reportId)
-    .order("version", { ascending: false });
-  if (error) return [];
-  return (data ?? []).map(mapHistory);
 }
 
 
