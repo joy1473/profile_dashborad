@@ -50,7 +50,7 @@ export function RagSidebar({ onRefresh }: RagSidebarProps) {
     // 이미지 파일을 base64 data URI로 변환 (5MB 이하만)
     const imgFiles = Array.from(files).filter((f) => /\.(png|jpg|jpeg|gif|bmp|svg|webp)$/i.test(f.name));
     for (const imgFile of imgFiles) {
-      if (imgFile.size > 5 * 1024 * 1024) continue; // 5MB 초과 이미지 스킵
+      if (imgFile.size > 5 * 1024 * 1024) continue;
       const arrayBuffer = await imgFile.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
       let binary = "";
@@ -58,9 +58,15 @@ export function RagSidebar({ onRefresh }: RagSidebarProps) {
       const base64 = btoa(binary);
       const mimeType = imgFile.type || `image/${imgFile.name.split(".").pop()?.toLowerCase()}`;
       const dataUri = `data:${mimeType};base64,${base64}`;
-      const imgFilename = imgFile.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const srcRegex = new RegExp(`(src=["'])${imgFilename}(["'])`, "gi");
-      htmlContent = htmlContent.replace(srcRegex, `$1${dataUri}$2`);
+      const fileName = imgFile.name;
+      // 원본 파일명으로 교체
+      const escaped = fileName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      htmlContent = htmlContent.split(fileName).join(dataUri);
+      // URL 인코딩된 파일명으로도 교체
+      const encoded = encodeURIComponent(fileName);
+      if (encoded !== fileName) {
+        htmlContent = htmlContent.split(encoded).join(dataUri);
+      }
     }
 
     const titleMatch = htmlContent.match(/<title>(.*?)<\/title>/i);

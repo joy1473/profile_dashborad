@@ -85,7 +85,7 @@ export function RagPreview() {
           ref={iframeRef}
           srcDoc={currentHtml}
           className="w-full h-full border-0"
-          sandbox="allow-same-origin"
+          sandbox="allow-same-origin allow-scripts"
           title="문서 미리보기"
         />
       </div>
