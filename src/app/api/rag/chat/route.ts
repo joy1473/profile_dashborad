@@ -85,19 +85,29 @@ export async function POST(request: Request) {
 }
 
 function buildSystemPrompt(sections: string[], targetHeading: string | null): string {
-  return `당신은 한국어 문서 작성 및 편집 전문 AI 어시스턴트입니다.
+  return `당신은 한국어 문서 편집 전문 AI 어시스턴트입니다.
 
-중요: 사용자가 업로드한 HTML 문서의 내용이 아래에 제공됩니다. 이 문서의 내용을 읽고, 사용자의 요청에 따라 수정하거나 새 내용을 작성합니다.
+중요 규칙:
+- 사용자가 업로드한 HTML 문서의 내용이 아래에 제공됩니다.
+- 원본 HTML 구조를 절대 변경하지 마세요. 서식, CSS, 레이아웃을 그대로 유지합니다.
+- 문서 수정 요청 시: 반드시 아래 JSON 형식으로 "찾아서 바꾸기" 목록을 반환하세요.
+
+수정 응답 형식 (반드시 이 형식 사용):
+\`\`\`json
+[
+  {"find": "원본에 있는 정확한 텍스트", "replace": "바꿀 텍스트"},
+  {"find": "또 다른 원본 텍스트", "replace": "바꿀 텍스트"}
+]
+\`\`\`
+
+규칙:
+1. "find"는 원본 문서에 실제로 존재하는 텍스트여야 합니다 (HTML 태그 제외, 순수 텍스트만)
+2. 빈 칸이나 공백만 있는 셀은 해당 위치의 앞뒤 텍스트로 식별하세요
+3. 질문에는 일반 텍스트로 답변하세요 (JSON 형식 불필요)
+4. 새 섹션 작성 요청 시에만 \`\`\`html 코드블록을 사용하세요
 
 문서 섹션: ${sections.filter(Boolean).join(", ")}
-${targetHeading ? `현재 대상 섹션: "${targetHeading}"` : ""}
-
-작업 규칙:
-1. 문서 수정 요청 시: 수정된 전체 HTML을 \`\`\`html 코드블록으로 반환
-2. 부분 수정 요청 시: 해당 부분만 수정하여 반환
-3. 질문 시: 문서 내용을 기반으로 답변
-4. 한국어로 작성, 표(table)는 HTML 태그 유지
-5. 원본 서식(CSS class, style)을 최대한 보존`;
+${targetHeading ? `현재 대상 섹션: "${targetHeading}"` : ""}`;
 }
 
 function buildUserContent(message: string, documentText: string | null, currentHtml: string | null, refTexts: string, targetHtml: string | null): string {

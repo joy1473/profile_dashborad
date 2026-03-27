@@ -56,24 +56,65 @@ export function RagChat() {
     })();
   }, [activeDocumentId, setSessionId, setChatMessages]);
 
-  // HTML 코드블록 추출
+  // JSON 교체 지시 추출
+  const extractJsonReplacements = (content: string): { find: string; replace: string }[] | null => {
+    const match = content.match(/```json\s*([\s\S]*?)```/);
+    if (!match) return null;
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      if (Array.isArray(parsed) && parsed.every((r: any) => r.find && r.replace !== undefined)) return parsed;
+    } catch { /* invalid JSON */ }
+    return null;
+  };
+
+  // HTML 코드블록 추출 (새 섹션 작성용)
   const extractHtmlBlock = (content: string): string | null => {
     const match = content.match(/```html\s*([\s\S]*?)```/);
     return match ? match[1].trim() : null;
   };
 
-  // AI 응답 HTML을 문서에 적용
-  const applyHtmlToDocument = useCallback(async (newHtml: string) => {
+  // 교체 가능한 블록이 있는지 확인
+  const hasApplyableContent = (content: string): boolean => {
+    return !!extractJsonReplacements(content) || !!extractHtmlBlock(content);
+  };
+
+  // AI 응답을 문서에 적용
+  const applyToDocument = useCallback(async (content: string) => {
     if (!currentHtml || !activeDocumentId) return;
     pushUndo(currentHtml);
 
-    // newHtml이 전체 문서인지 부분인지 판단
-    const isFullDoc = newHtml.includes("<html") || newHtml.includes("<!DOCTYPE") || newHtml.includes("<body");
-    const updatedHtml = isFullDoc ? newHtml : currentHtml; // 전체면 교체, 부분이면 현재 유지 (TODO: 섹션별 교체)
+    let updatedHtml = currentHtml;
+    let changeCount = 0;
 
-    if (isFullDoc) {
-      updateHtml(updatedHtml);
+    // 1. JSON 교체 지시 적용 (우선)
+    const replacements = extractJsonReplacements(content);
+    if (replacements) {
+      for (const { find, replace } of replacements) {
+        if (updatedHtml.includes(find)) {
+          updatedHtml = updatedHtml.split(find).join(replace);
+          changeCount++;
+        }
+      }
     }
+
+    // 2. HTML 코드블록 (새 섹션 삽입용)
+    if (changeCount === 0) {
+      const htmlBlock = extractHtmlBlock(content);
+      if (htmlBlock) {
+        const isFullDoc = htmlBlock.includes("<html") || htmlBlock.includes("<body");
+        if (isFullDoc) {
+          updatedHtml = htmlBlock;
+          changeCount = 1;
+        }
+      }
+    }
+
+    if (changeCount === 0) {
+      alert("적용할 변경사항을 찾지 못했습니다. AI에게 다시 요청해보세요.");
+      return;
+    }
+
+    updateHtml(updatedHtml);
 
     // 새 버전 자동 생성
     const { data: { user } } = await supabase.auth.getUser();
@@ -95,7 +136,7 @@ export function RagChat() {
     const { data: allVers } = await supabase.from("rag_versions").select("*").eq("document_id", activeDocumentId).order("version_number", { ascending: false });
     if (allVers) setVersions(allVers);
 
-    alert("문서에 적용되었습니다! (v" + nextNum.toFixed(1) + ")");
+    alert(`문서에 ${changeCount}건 적용 완료! (v${nextNum.toFixed(1)})`);
   }, [currentHtml, activeDocumentId, versions, pushUndo, updateHtml, setVersions]);
 
   // 메시지 전송
@@ -262,9 +303,9 @@ export function RagChat() {
             "bg-zinc-50 dark:bg-zinc-950 text-zinc-500 text-center mx-auto border border-zinc-200 dark:border-zinc-800 text-[10px]"
           }`}>
             <div className="whitespace-pre-wrap">{msg.content}</div>
-            {msg.role === "assistant" && extractHtmlBlock(msg.content) && (
+            {msg.role === "assistant" && hasApplyableContent(msg.content) && (
               <button
-                onClick={() => applyHtmlToDocument(extractHtmlBlock(msg.content)!)}
+                onClick={() => applyToDocument(msg.content)}
                 className="mt-2 px-3 py-1 bg-green-600 text-white text-[10px] font-bold rounded hover:bg-green-700"
               >
                 ✅ 문서에 적용
