@@ -68,7 +68,7 @@ export function AnalyzerTabs() {
             </div>
 
             {/* Right: KV Panel */}
-            <div className="w-80 border-l bg-gray-50 overflow-hidden flex flex-col">
+            <div className="w-96 border-l bg-gray-50 overflow-hidden flex flex-col">
               <KvPairPanel />
             </div>
           </div>
