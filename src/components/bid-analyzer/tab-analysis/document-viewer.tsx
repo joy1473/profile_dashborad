@@ -130,28 +130,10 @@ export function DocumentViewer() {
     };
   }, [editMode, documentModel, setPendingSelection]);
 
-  if (isParsingDocument) {
-    return (
-      <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
-        <div className="text-center">
-          <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
-          <p className="text-sm text-gray-600">문서 분석 중...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!documentModel) {
-    return (
-      <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
-        <p className="text-sm text-gray-500">파일을 업로드하면 여기에 문서가 표시됩니다</p>
-      </div>
-    );
-  }
-
   // HTML iframe에 편집모드 이벤트 바인딩 (editMode 변경 시 갱신)
+  // 주의: 모든 useEffect는 조건부 return 이전에 위치해야 함 (React hooks 규칙)
   useEffect(() => {
-    if (documentModel?.fileType !== 'html') return;
+    if (!documentModel || documentModel.fileType !== 'html') return;
     const iframeDoc = iframeRef.current?.contentDocument;
     if (!iframeDoc) return;
 
@@ -214,6 +196,26 @@ export function DocumentViewer() {
       iframeDoc.removeEventListener('click', onClick);
     };
   }, [editMode, documentModel, setPendingSelection]);
+
+  // --- 조건부 early return (모든 useEffect 이후) ---
+  if (isParsingDocument) {
+    return (
+      <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
+          <p className="text-sm text-gray-600">문서 분석 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!documentModel) {
+    return (
+      <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
+        <p className="text-sm text-gray-500">파일을 업로드하면 여기에 문서가 표시됩니다</p>
+      </div>
+    );
+  }
 
   // HTML 파일은 iframe으로 렌더링
   if (documentModel.fileType === 'html') {
