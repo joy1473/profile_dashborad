@@ -10,13 +10,18 @@ export function DocumentViewer() {
   const { documentModel, editMode, setPendingSelection, isParsingDocument } = useBidAnalyzerStore();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // HTML 삽입
   useEffect(() => {
+    if (documentModel?.fileType === 'html') {
+      // HTML 파일은 iframe으로 렌더링 (원본 서식 100% 보존)
+      return;
+    }
     if (contentRef.current && documentModel?.renderedHtml) {
       contentRef.current.innerHTML = DOMPurify.sanitize(documentModel.renderedHtml, { ADD_ATTR: ['data-pos-id'] });
     }
-  }, [documentModel?.renderedHtml]);
+  }, [documentModel?.renderedHtml, documentModel?.fileType]);
 
   // 브라우저 기본 텍스트 선택(Selection API) 기반
   useEffect(() => {
@@ -140,6 +145,25 @@ export function DocumentViewer() {
     return (
       <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
         <p className="text-sm text-gray-500">파일을 업로드하면 여기에 문서가 표시됩니다</p>
+      </div>
+    );
+  }
+
+  // HTML 파일은 iframe으로 렌더링
+  if (documentModel.fileType === 'html') {
+    return (
+      <div
+        ref={wrapperRef}
+        className={`border rounded-lg overflow-hidden bg-white shadow-inner ${editMode ? 'edit-mode ring-2 ring-blue-400' : ''}`}
+        style={{ height: 'calc(100vh - 300px)' }}
+      >
+        <iframe
+          ref={iframeRef}
+          srcDoc={documentModel.renderedHtml}
+          className="w-full h-full border-0"
+          sandbox="allow-same-origin allow-scripts"
+          title="문서 미리보기"
+        />
       </div>
     );
   }

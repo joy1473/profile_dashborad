@@ -1,6 +1,6 @@
 // Bid Document Analyzer Types
 
-export type FileType = 'hwpx' | 'hwp' | 'docx' | 'doc' | 'xlsx' | 'xls' | 'pdf';
+export type FileType = 'hwpx' | 'hwp' | 'docx' | 'doc' | 'xlsx' | 'xls' | 'pdf' | 'html';
 export type SupportedViewerType = 'hwpx' | 'docx' | 'xlsx' | 'pdf';
 
 export interface DocumentPosition {
@@ -120,7 +120,7 @@ export function getFileType(fileName: string): FileType | null {
   const ext = fileName.split('.').pop()?.toLowerCase();
   const map: Record<string, FileType> = {
     hwpx: 'hwpx', hwp: 'hwp', docx: 'docx', doc: 'doc',
-    xlsx: 'xlsx', xls: 'xls', pdf: 'pdf',
+    xlsx: 'xlsx', xls: 'xls', pdf: 'pdf', html: 'html', htm: 'html',
   };
   return map[ext || ''] || null;
 }

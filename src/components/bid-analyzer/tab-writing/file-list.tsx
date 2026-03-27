@@ -64,7 +64,23 @@ export function WritingTab() {
       const ts = generateTimestamp();
       const baseName = file.name.replace(/\.[^.]+$/, '');
 
-      if (file.type === 'hwpx') {
+      if (file.type === 'html') {
+        // HTML → 매핑 데이터로 텍스트 교체 → HTML 다운로드
+        let html = await file.blob.text();
+        for (const row of mappingData) {
+          const key = String(row['Key'] || '').trim();
+          const value = String(row['Value'] || '').trim();
+          if (key && value) {
+            html = html.split(key).join(value);
+          }
+        }
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        setResultUrl(url);
+        setResultName(`${baseName}_${ts}.html`);
+        setIsHwpOutput(false);
+
+      } else if (file.type === 'hwpx') {
         // HWPX → XML 수정 → HWPX 다운로드
         const blob = await generateHwpx(file.blob, mappingData);
         const url = URL.createObjectURL(blob);

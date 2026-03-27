@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, BarChart3, Users, Video, QrCode, Columns3, Network, MessageSquare } from "lucide-react";
+import { CalendarDays, BarChart3, Users, Video, QrCode, Columns3, Network } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/chat", label: "문서RAG", icon: MessageSquare },
   { href: "/dashboard", label: "일정", icon: CalendarDays },
   { href: "/analytics", label: "입찰문서", icon: BarChart3 },
   { href: "/board", label: "보드", icon: Columns3 },

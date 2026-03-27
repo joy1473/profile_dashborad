@@ -7,14 +7,126 @@ import { getFileType } from '@/types/bid-analyzer';
 import { parseHwpx } from '@/lib/hwpx-parser';
 import { parseHwp } from '@/lib/hwp-parser';
 import { v4 as uuid } from 'uuid';
+import type { DocumentModel, DocumentPosition } from '@/types/bid-analyzer';
 
-const ACCEPTED = '.hwpx,.hwp,.docx,.doc,.xlsx,.xls,.pdf';
+const ACCEPTED = '.html,.htm,.css,.png,.jpg,.jpeg,.gif,.hwpx,.hwp,.docx,.doc,.xlsx,.xls,.pdf';
 
 export function FileUpload() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { addFile, setDocumentModel, setParsingDocument } = useBidAnalyzerStore();
 
-  const handleFile = useCallback(async (file: File) => {
+  const handleFiles = useCallback(async (fileList: FileList) => {
+    const files = Array.from(fileList);
+    const htmlFile = files.find((f) => f.name.endsWith('.html') || f.name.endsWith('.htm'));
+
+    if (htmlFile) {
+      // HTML + CSS + 이미지 통합 처리
+      setParsingDocument(true);
+      try {
+        let htmlContent = await htmlFile.text();
+
+        // CSS 파일 인라인
+        const cssFiles = files.filter((f) => f.name.endsWith('.css'));
+        for (const cssFile of cssFiles) {
+          const cssText = await cssFile.text();
+          const cssName = cssFile.name;
+          // link 태그 교체
+          const linkRegex = new RegExp(`<link[^>]*href=["']${cssName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`, 'gi');
+          if (linkRegex.test(htmlContent)) {
+            htmlContent = htmlContent.replace(linkRegex, `<style>${cssText}</style>`);
+          } else {
+            htmlContent = htmlContent.replace('</head>', `<style>${cssText}</style></head>`);
+          }
+        }
+
+        // 이미지 파일 base64 인라인
+        const imgFiles = files.filter((f) => /\.(png|jpg|jpeg|gif|bmp|svg|webp)$/i.test(f.name));
+        for (const imgFile of imgFiles) {
+          if (imgFile.size > 5 * 1024 * 1024) continue;
+          const arrayBuffer = await imgFile.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          const base64 = btoa(binary);
+          const mimeType = imgFile.type || `image/${imgFile.name.split('.').pop()?.toLowerCase()}`;
+          const dataUri = `data:${mimeType};base64,${base64}`;
+          htmlContent = htmlContent.split(imgFile.name).join(dataUri);
+          const encoded = encodeURIComponent(imgFile.name);
+          if (encoded !== imgFile.name) {
+            htmlContent = htmlContent.split(encoded).join(dataUri);
+          }
+        }
+
+        // DocumentModel 생성
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlContent, 'text/html');
+        const positionMap = new Map<string, DocumentPosition>();
+
+        // 텍스트 요소에 data-pos-id 부여
+        let posIdx = 0;
+        const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+        let node;
+        const textNodes: { node: Node; text: string }[] = [];
+        while ((node = walker.nextNode())) {
+          const text = node.textContent?.trim();
+          if (text) textNodes.push({ node, text });
+        }
+
+        // 각 텍스트 노드를 span으로 감싸기
+        for (const { node } of textNodes) {
+          const span = doc.createElement('span');
+          const posId = `pos-${posIdx++}`;
+          span.setAttribute('data-pos-id', posId);
+          span.textContent = node.textContent;
+          node.parentNode?.replaceChild(span, node);
+
+          positionMap.set(posId, {
+            fileType: 'html',
+            sectionIndex: 0,
+            paragraphIndex: 0,
+            runIndex: 0,
+            charOffset: 0,
+            charLength: (node.textContent || '').length,
+            domElementId: posId,
+          });
+        }
+
+        const renderedHtml = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
+
+        const model: DocumentModel = {
+          fileName: htmlFile.name,
+          fileType: 'html',
+          originalBlob: new Blob([htmlContent], { type: 'text/html' }),
+          sections: [],
+          renderedHtml,
+          positionMap,
+        };
+
+        const uploaded = {
+          id: uuid(),
+          name: htmlFile.name,
+          type: 'html' as const,
+          size: htmlFile.size,
+          blob: new Blob([htmlContent], { type: 'text/html' }),
+          uploadedAt: new Date(),
+          model,
+        };
+
+        addFile(uploaded);
+        setDocumentModel(model);
+      } catch (err) {
+        console.error('HTML 파싱 오류:', err);
+        alert('HTML 파싱 중 오류가 발생했습니다.');
+      } finally {
+        setParsingDocument(false);
+      }
+      return;
+    }
+
+    // 기존 HWP/HWPX 처리
+    const file = files[0];
+    if (!file) return;
+
     const fileType = getFileType(file.name);
     if (!fileType) {
       alert('지원하지 않는 파일 형식입니다.');
@@ -31,7 +143,6 @@ export function FileUpload() {
     };
     addFile(uploaded);
 
-    // Parse document
     setParsingDocument(true);
     try {
       if (fileType === 'hwpx') {
@@ -43,7 +154,6 @@ export function FileUpload() {
         setDocumentModel(model);
         uploaded.model = model;
       }
-      // TODO: docx, xlsx, pdf
     } catch (err) {
       console.error('문서 파싱 오류:', err);
       alert('문서 파싱 중 오류가 발생했습니다.');
@@ -54,14 +164,12 @@ export function FileUpload() {
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
-  }, [handleFile]);
+    if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files);
+  }, [handleFiles]);
 
   const onChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
-  }, [handleFile]);
+    if (e.target.files && e.target.files.length > 0) handleFiles(e.target.files);
+  }, [handleFiles]);
 
   return (
     <div
@@ -74,6 +182,7 @@ export function FileUpload() {
         ref={inputRef}
         type="file"
         accept={ACCEPTED}
+        multiple
         onChange={onChange}
         className="hidden"
       />
@@ -82,10 +191,10 @@ export function FileUpload() {
         파일을 드래그하거나 클릭하여 업로드
       </p>
       <p className="text-xs text-gray-500 mt-1">
-        HWP, HWPX, DOCX, XLSX, PDF 지원
+        HTML+CSS+이미지 (한글 변환 문서), HWP, HWPX 지원
       </p>
       <div className="flex items-center justify-center gap-2 mt-3">
-        {['HWP', 'HWPX', 'DOCX', 'XLSX', 'PDF'].map((ext) => (
+        {['HTML', 'HWP', 'HWPX'].map((ext) => (
           <span key={ext} className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600">
             <FileText className="w-3 h-3 inline mr-0.5" />
             {ext}
