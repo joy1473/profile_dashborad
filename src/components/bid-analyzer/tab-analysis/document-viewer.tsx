@@ -143,29 +143,28 @@ export function DocumentViewer() {
       if (!sel || sel.isCollapsed) return;
 
       const selectedText = sel.toString().trim();
-      if (!selectedText) return;
 
-      const allSpans = Array.from(iframeDoc.querySelectorAll('[data-pos-id]'));
-      const selectedSpans: HTMLElement[] = [];
-      for (const span of allSpans) {
-        if (sel.containsNode(span, true)) selectedSpans.push(span as HTMLElement);
-      }
-
+      // 하이라이트 초기화
       iframeDoc.querySelectorAll('.selected, .drag-selected').forEach((el) => el.classList.remove('selected', 'drag-selected'));
 
-      const texts: string[] = [];
-      for (const span of selectedSpans) { span.classList.add('drag-selected'); texts.push(span.textContent || ''); }
-
-      const text = texts.length > 0 ? texts.join('').trim() : selectedText;
-      if (!text) return;
-
-      const firstPosId = selectedSpans[0]?.getAttribute('data-pos-id');
-      const position = firstPosId ? documentModel.positionMap.get(firstPosId) : undefined;
+      // 선택 범위의 컨테이너 요소 찾기
+      const range = sel.getRangeAt(0);
+      const container = range.commonAncestorContainer;
+      const el = container.nodeType === 3 ? container.parentElement : container as HTMLElement;
+      if (el) el.classList?.add('drag-selected');
 
       setPendingSelection({
         id: uuid(),
-        text: text || '(빈 영역)',
-        position: position || { fileType: 'html', sectionIndex: 0, paragraphIndex: 0, runIndex: 0, charOffset: 0, charLength: text.length, domElementId: firstPosId || 'manual' },
+        text: selectedText || '(빈 영역)',
+        position: {
+          fileType: 'html',
+          sectionIndex: 0,
+          paragraphIndex: 0,
+          runIndex: 0,
+          charOffset: 0,
+          charLength: selectedText.length,
+          domElementId: el?.id || 'selection',
+        },
       });
       sel.removeAllRanges();
     };
@@ -175,18 +174,29 @@ export function DocumentViewer() {
       const sel = iframeDoc.getSelection();
       if (sel && !sel.isCollapsed) return;
 
-      const target = (e.target as HTMLElement).closest('[data-pos-id]') as HTMLElement | null;
-      if (!target) return;
-
-      const posId = target.getAttribute('data-pos-id');
-      if (!posId) return;
-      const pos = documentModel.positionMap.get(posId);
-      if (!pos) return;
+      // 클릭한 요소 또는 가장 가까운 td/th/span/div 찾기
+      const target = e.target as HTMLElement;
+      const cell = target.closest('td, th') as HTMLElement | null;
+      const clickTarget = cell || target;
 
       iframeDoc.querySelectorAll('.selected, .drag-selected').forEach((el) => el.classList.remove('selected', 'drag-selected'));
-      target.classList.add('selected');
+      clickTarget.classList.add('selected');
 
-      setPendingSelection({ id: uuid(), text: target.textContent?.trim() || '(빈 셀)', position: pos });
+      const text = clickTarget.textContent?.trim() || '';
+
+      setPendingSelection({
+        id: uuid(),
+        text: text || '(빈 칸)',
+        position: {
+          fileType: 'html',
+          sectionIndex: 0,
+          paragraphIndex: 0,
+          runIndex: 0,
+          charOffset: 0,
+          charLength: text.length,
+          domElementId: clickTarget.id || 'click',
+        },
+      });
     };
 
     iframeDoc.addEventListener('mouseup', onMouseUp);
