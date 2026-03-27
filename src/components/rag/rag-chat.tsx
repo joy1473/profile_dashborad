@@ -216,7 +216,7 @@ export function RagChat() {
     <div className="w-[360px] bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden shrink-0">
       {/* Header */}
       <div className="p-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-        <span className="text-sm font-bold text-zinc-200">💬 AI 어시스턴트</span>
+        <span className="text-sm font-bold text-zinc-900 dark:text-zinc-200">💬 AI 어시스턴트</span>
         <span className="text-[10px] text-zinc-500">Claude</span>
       </div>
 
@@ -234,7 +234,7 @@ export function RagChat() {
           <div className="text-[10px] text-zinc-500 mb-1">참조 자료 선택:</div>
           <div className="space-y-0.5 max-h-20 overflow-y-auto">
             {references.map((ref) => (
-              <label key={ref.id} className="flex items-center gap-1.5 text-[10px] text-zinc-400 cursor-pointer">
+              <label key={ref.id} className="flex items-center gap-1.5 text-[10px] text-zinc-700 dark:text-zinc-400 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={selectedReferenceIds.includes(ref.id)}
@@ -293,7 +293,7 @@ export function RagChat() {
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder={activeDocumentId ? "메시지 입력... (Shift+Enter 줄바꿈)" : "문서를 먼저 선택하세요"}
             disabled={!activeDocumentId || isStreaming}
-            className="flex-1 bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 outline-none resize-none min-h-[36px] max-h-[100px] disabled:opacity-30 focus:border-blue-600"
+            className="flex-1 bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-900 dark:text-zinc-200 outline-none resize-none min-h-[36px] max-h-[100px] disabled:opacity-30 focus:border-blue-600"
             rows={1}
           />
           <button
