@@ -53,7 +53,7 @@ export function RagWorkspace() {
   }, [activeDocumentId, loadDocument]);
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] -m-6 overflow-hidden bg-zinc-50 dark:bg-zinc-950">
+    <div className="flex h-[calc(100vh-7.5rem)] -m-6 overflow-hidden bg-zinc-50 dark:bg-zinc-950">
       {/* 왼쪽 패널 */}
       <RagSidebar onRefresh={fetchDocuments} />
 

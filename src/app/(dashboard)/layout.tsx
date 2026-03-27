@@ -62,13 +62,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <ToastProvider>
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-        <Sidebar />
-        <div className="lg:pl-64">
-          <Header />
-          <main className="p-6" data-testid="main-content">
-            {children}
-          </main>
+        <Header />
+        <div className="border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950">
+          <Sidebar />
         </div>
+        <main className="p-6" data-testid="main-content">
+          {children}
+        </main>
       </div>
     </ToastProvider>
   );
