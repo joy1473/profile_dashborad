@@ -57,41 +57,9 @@ export function FileUpload() {
           }
         }
 
-        // DocumentModel 생성
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlContent, 'text/html');
+        // DocumentModel 생성 (원본 HTML 그대로 사용, 텍스트 노드 감싸기 생략)
         const positionMap = new Map<string, DocumentPosition>();
-
-        // 텍스트 요소에 data-pos-id 부여
-        let posIdx = 0;
-        const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-        let node;
-        const textNodes: { node: Node; text: string }[] = [];
-        while ((node = walker.nextNode())) {
-          const text = node.textContent?.trim();
-          if (text) textNodes.push({ node, text });
-        }
-
-        // 각 텍스트 노드를 span으로 감싸기
-        for (const { node } of textNodes) {
-          const span = doc.createElement('span');
-          const posId = `pos-${posIdx++}`;
-          span.setAttribute('data-pos-id', posId);
-          span.textContent = node.textContent;
-          node.parentNode?.replaceChild(span, node);
-
-          positionMap.set(posId, {
-            fileType: 'html',
-            sectionIndex: 0,
-            paragraphIndex: 0,
-            runIndex: 0,
-            charOffset: 0,
-            charLength: (node.textContent || '').length,
-            domElementId: posId,
-          });
-        }
-
-        const renderedHtml = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
+        const renderedHtml = htmlContent;
 
         const model: DocumentModel = {
           fileName: htmlFile.name,
