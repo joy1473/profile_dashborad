@@ -30,7 +30,39 @@ export function RagSidebar({ onRefresh }: RagSidebarProps) {
     const htmlFile = Array.from(files).find((f) => f.name.endsWith(".html") || f.name.endsWith(".htm"));
     if (!htmlFile) { alert("HTML 파일이 필요합니다."); setUploading(false); return; }
 
-    const htmlContent = await htmlFile.text();
+    let htmlContent = await htmlFile.text();
+
+    // CSS 파일을 HTML에 인라인 삽입
+    const cssFiles = Array.from(files).filter((f) => f.name.endsWith(".css"));
+    for (const cssFile of cssFiles) {
+      const cssText = await cssFile.text();
+      const cssFilename = cssFile.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      // <link rel="stylesheet" href="파일명.css"> 를 <style>내용</style>로 교체
+      const linkRegex = new RegExp(`<link[^>]*href=["']${cssFilename}["'][^>]*>`, "gi");
+      if (linkRegex.test(htmlContent)) {
+        htmlContent = htmlContent.replace(linkRegex, `<style>${cssText}</style>`);
+      } else {
+        // link 태그를 못 찾으면 head 끝에 삽입
+        htmlContent = htmlContent.replace("</head>", `<style>${cssText}</style></head>`);
+      }
+    }
+
+    // 이미지 파일을 base64 data URI로 변환 (5MB 이하만)
+    const imgFiles = Array.from(files).filter((f) => /\.(png|jpg|jpeg|gif|bmp|svg|webp)$/i.test(f.name));
+    for (const imgFile of imgFiles) {
+      if (imgFile.size > 5 * 1024 * 1024) continue; // 5MB 초과 이미지 스킵
+      const arrayBuffer = await imgFile.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const base64 = btoa(binary);
+      const mimeType = imgFile.type || `image/${imgFile.name.split(".").pop()?.toLowerCase()}`;
+      const dataUri = `data:${mimeType};base64,${base64}`;
+      const imgFilename = imgFile.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const srcRegex = new RegExp(`(src=["'])${imgFilename}(["'])`, "gi");
+      htmlContent = htmlContent.replace(srcRegex, `$1${dataUri}$2`);
+    }
+
     const titleMatch = htmlContent.match(/<title>(.*?)<\/title>/i);
     const name = titleMatch?.[1] || htmlFile.name.replace(/\.html?$/, "");
 
@@ -170,7 +202,7 @@ export function RagSidebar({ onRefresh }: RagSidebarProps) {
             {uploading ? <Loader2 size={10} className="animate-spin" /> : <><Plus size={10} className="inline" /> 새 문서</>}
           </button>
         </div>
-        <input ref={htmlInputRef} type="file" accept=".html,.htm,.css,.png,.jpg,.gif" multiple onChange={handleHtmlUpload} className="hidden" />
+        <input ref={htmlInputRef} type="file" accept=".html,.htm,.css,.png,.jpg,.gif,.jpeg,.bmp,.svg,.webp" multiple onChange={handleHtmlUpload} className="hidden" />
 
         <div className="space-y-1">
           {documents.map((doc) => (
