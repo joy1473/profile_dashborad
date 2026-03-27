@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, BarChart3, Users, Video, Menu, X, QrCode, Columns3, Network } from "lucide-react";
+import { CalendarDays, BarChart3, Users, Video, Menu, X, QrCode, Columns3, Network, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/store/dashboard-store";
 
@@ -13,6 +13,7 @@ const navItems = [
   { href: "/qr-cards", label: "QR 명함", icon: QrCode },
   { href: "/board", label: "보드", icon: Columns3 },
   { href: "/graph", label: "SW역량", icon: Network },
+  { href: "/chat", label: "문서RAG", icon: MessageSquare },
   { href: "/settings", label: "회의", icon: Video },
 ];
 
