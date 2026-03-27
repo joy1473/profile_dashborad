@@ -193,6 +193,8 @@ export function DocumentViewer() {
       clickTarget.classList.add('selected');
 
       const text = clickTarget.textContent?.trim() || '';
+      // innerHTML을 저장하여 나중에 정확한 위치 교체에 사용
+      const innerHtml = clickTarget.innerHTML;
 
       setPendingSelection({
         id: uuid(),
@@ -205,6 +207,7 @@ export function DocumentViewer() {
           charOffset: 0,
           charLength: text.length,
           domElementId: targetId,
+          cellRef: innerHtml, // 셀의 innerHTML 저장
         },
       });
     };
