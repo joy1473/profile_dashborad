@@ -25,7 +25,7 @@ export async function POST(request: Request) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 4096,
         stream: true,
         system: systemPrompt,
@@ -34,9 +34,10 @@ export async function POST(request: Request) {
     });
 
     if (!res.ok) {
-      const err = await res.text();
-      console.error("Claude API error:", err);
-      return new Response("AI 응답 오류가 발생했습니다.", {
+      const errText = await res.text();
+      console.error("Claude API error:", res.status, errText);
+      const errMsg = `AI 오류 (${res.status}): ${errText.slice(0, 200)}`;
+      return new Response(errMsg, {
         headers: { "Content-Type": "text/plain; charset=utf-8" },
       });
     }

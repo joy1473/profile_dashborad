@@ -107,7 +107,10 @@ export function RagChat() {
         }),
       });
 
-      if (!res.ok) throw new Error("AI 응답 실패");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || `HTTP ${res.status}`);
+      }
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
@@ -147,7 +150,7 @@ export function RagChat() {
         session_id: sessionId,
         document_id: activeDocumentId,
         role: "system" as const,
-        content: "AI 응답 오류. 다시 시도해주세요.",
+        content: `AI 응답 오류: ${err instanceof Error ? err.message : "알 수 없는 오류"}`,
         token_count: 0,
         targeted_section_id: null,
         version_created_id: null,
