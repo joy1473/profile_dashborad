@@ -149,7 +149,7 @@ export function DocumentViewer() {
     );
   }
 
-  // HTML 파일은 iframe으로 렌더링
+  // HTML 파일은 iframe으로 렌더링 + 텍스트 선택 지원
   if (documentModel.fileType === 'html') {
     return (
       <div
@@ -163,6 +163,100 @@ export function DocumentViewer() {
           className="w-full h-full border-0"
           sandbox="allow-same-origin allow-scripts"
           title="문서 미리보기"
+          onLoad={() => {
+            const iframeDoc = iframeRef.current?.contentDocument;
+            if (!iframeDoc) return;
+
+            // 편집모드 스타일 주입
+            const style = iframeDoc.createElement('style');
+            style.textContent = `
+              [data-pos-id]:hover { background: rgba(59,130,246,0.1); cursor: pointer; }
+              .selected { background: rgba(59,130,246,0.3) !important; outline: 2px solid #2563eb; }
+              .drag-selected { background: rgba(34,197,94,0.2) !important; outline: 1px solid #16a34a; }
+            `;
+            iframeDoc.head.appendChild(style);
+
+            // 텍스트 선택 이벤트
+            iframeDoc.addEventListener('mouseup', () => {
+              if (!editMode) return;
+              const sel = iframeDoc.getSelection();
+              if (!sel || sel.isCollapsed) return;
+
+              const selectedText = sel.toString().trim();
+              if (!selectedText) return;
+
+              // 선택 범위 내의 [data-pos-id] 요소 찾기
+              const range = sel.getRangeAt(0);
+              const allSpans = Array.from(iframeDoc.querySelectorAll('[data-pos-id]'));
+              const selectedSpans: HTMLElement[] = [];
+
+              for (const span of allSpans) {
+                if (sel.containsNode(span, true)) {
+                  selectedSpans.push(span as HTMLElement);
+                }
+              }
+
+              // 하이라이트
+              iframeDoc.querySelectorAll('.selected, .drag-selected').forEach((el) => {
+                el.classList.remove('selected', 'drag-selected');
+              });
+
+              const texts: string[] = [];
+              for (const span of selectedSpans) {
+                span.classList.add('drag-selected');
+                texts.push(span.textContent || '');
+              }
+
+              const text = texts.length > 0 ? texts.join('').trim() : selectedText;
+              if (!text) return;
+
+              const firstPosId = selectedSpans[0]?.getAttribute('data-pos-id');
+              const position = firstPosId && documentModel.positionMap.get(firstPosId);
+
+              const selection: TextSelection = {
+                id: uuid(),
+                text: text || '(빈 영역)',
+                position: position || {
+                  fileType: 'html',
+                  sectionIndex: 0,
+                  paragraphIndex: 0,
+                  runIndex: 0,
+                  charOffset: 0,
+                  charLength: text.length,
+                  domElementId: firstPosId || 'manual',
+                },
+              };
+
+              setPendingSelection(selection);
+              sel.removeAllRanges();
+            });
+
+            // 클릭 이벤트
+            iframeDoc.addEventListener('click', (e: MouseEvent) => {
+              if (!editMode) return;
+              const sel = iframeDoc.getSelection();
+              if (sel && !sel.isCollapsed) return;
+
+              const target = (e.target as HTMLElement).closest('[data-pos-id]') as HTMLElement | null;
+              if (!target || !documentModel) return;
+
+              const posId = target.getAttribute('data-pos-id');
+              if (!posId) return;
+              const pos = documentModel.positionMap.get(posId);
+              if (!pos) return;
+
+              iframeDoc.querySelectorAll('.selected, .drag-selected').forEach((el) => {
+                el.classList.remove('selected', 'drag-selected');
+              });
+              target.classList.add('selected');
+
+              setPendingSelection({
+                id: uuid(),
+                text: target.textContent?.trim() || '(빈 셀)',
+                position: pos,
+              });
+            });
+          }}
         />
       </div>
     );
