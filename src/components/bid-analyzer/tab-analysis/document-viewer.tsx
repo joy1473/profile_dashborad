@@ -152,7 +152,7 @@ export function DocumentViewer() {
 
       const selectedText = sel.toString().trim();
 
-      iframeDoc.querySelectorAll('.selected, .drag-selected').forEach((el) => el.classList.remove('selected', 'drag-selected'));
+      // 하이라이트 없음 (원본 보존)
 
       const range = sel.getRangeAt(0);
       const container = range.commonAncestorContainer;
@@ -160,7 +160,7 @@ export function DocumentViewer() {
       if (!el) return;
 
       const elId = ensureId(el);
-      el.classList.add('drag-selected');
+      // 하이라이트 없음
 
       setPendingSelection({
         id: uuid(),
@@ -189,8 +189,8 @@ export function DocumentViewer() {
 
       const targetId = ensureId(clickTarget);
 
-      iframeDoc.querySelectorAll('.selected, .drag-selected').forEach((el) => el.classList.remove('selected', 'drag-selected'));
-      clickTarget.classList.add('selected');
+      // 하이라이트 없음 (원본 보존)
+      // 하이라이트 없음
 
       const text = clickTarget.textContent?.trim() || '';
       // innerHTML을 저장하여 나중에 정확한 위치 교체에 사용
@@ -255,14 +255,12 @@ export function DocumentViewer() {
           sandbox="allow-same-origin allow-scripts"
           title="문서 미리보기"
           onLoad={() => {
+            // 편집모드 커서만 변경 (색상 하이라이트 없음)
             const iframeDoc = iframeRef.current?.contentDocument;
             if (!iframeDoc) return;
             const style = iframeDoc.createElement('style');
-            style.textContent = `
-              [data-pos-id]:hover { background: rgba(59,130,246,0.1); cursor: pointer; }
-              .selected { background: rgba(59,130,246,0.3) !important; outline: 2px solid #2563eb; }
-              .drag-selected { background: rgba(34,197,94,0.2) !important; outline: 1px solid #16a34a; }
-            `;
+            style.textContent = `td:hover, th:hover { cursor: pointer; }`;
+            style.setAttribute('data-edit-style', 'true');
             iframeDoc.head.appendChild(style);
           }}
         />

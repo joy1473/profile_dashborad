@@ -76,11 +76,6 @@ export function KvPairPanel() {
       return;
     }
 
-    // 하이라이트 CSS 제거 (저장 전)
-    iframeDoc.querySelectorAll('.selected, .drag-selected').forEach((el) => {
-      el.classList.remove('selected', 'drag-selected');
-    });
-
     // 매핑 적용: domElementId로 요소 찾아서 Value 삽입
     let changeCount = 0;
     for (const pair of kvPairs) {
@@ -106,17 +101,10 @@ export function KvPairPanel() {
       return;
     }
 
-    // 편집모드 스타일 태그 제거 (저장 전)
-    iframeDoc.querySelectorAll('style').forEach((s) => {
-      if (s.textContent?.includes('data-pos-id') || s.textContent?.includes('.selected')) {
-        s.remove();
-      }
-    });
+    // 편집용 style 태그만 제거 (kv-* ID는 유지)
+    iframeDoc.querySelectorAll('style[data-edit-style]').forEach((s) => s.remove());
 
-    // 동적으로 부여한 kv-* ID 제거 (원본 보존)
-    iframeDoc.querySelectorAll('[id^="kv-"]').forEach((el) => el.removeAttribute('id'));
-
-    // 변경된 HTML 다운로드
+    // 변경된 HTML 다운로드 (kv-* ID는 유지하여 엑셀 재사용 가능)
     const html = '<!DOCTYPE html>' + iframeDoc.documentElement.outerHTML;
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
