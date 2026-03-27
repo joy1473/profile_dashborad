@@ -7,13 +7,13 @@ import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/store/dashboard-store";
 
 const navItems = [
+  { href: "/chat", label: "문서RAG", icon: MessageSquare },
   { href: "/dashboard", label: "일정", icon: CalendarDays },
   { href: "/analytics", label: "입찰문서", icon: BarChart3 },
-  { href: "/users", label: "사용자", icon: Users },
-  { href: "/qr-cards", label: "QR 명함", icon: QrCode },
   { href: "/board", label: "보드", icon: Columns3 },
   { href: "/graph", label: "SW역량", icon: Network },
-  { href: "/chat", label: "문서RAG", icon: MessageSquare },
+  { href: "/users", label: "사용자", icon: Users },
+  { href: "/qr-cards", label: "QR 명함", icon: QrCode },
   { href: "/settings", label: "회의", icon: Video },
 ];
 

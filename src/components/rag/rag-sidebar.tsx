@@ -187,18 +187,18 @@ export function RagSidebar({ onRefresh }: RagSidebarProps) {
   const progressPct = totalSections > 0 ? Math.round((completedSections / totalSections) * 100) : 0;
 
   return (
-    <div className="w-[280px] bg-zinc-900 border-r border-zinc-800 flex flex-col overflow-hidden shrink-0">
+    <div className="w-[280px] bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden shrink-0">
       {/* Header */}
-      <div className="p-3 border-b border-zinc-800 flex items-center justify-between">
-        <span className="text-sm font-bold text-zinc-200">📂 문서RAG</span>
+      <div className="p-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+        <span className="text-sm font-bold text-zinc-900 dark:text-zinc-200">📂 문서RAG</span>
         <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">Beta</span>
       </div>
 
       {/* 원본 문서 */}
-      <div className="p-3 border-b border-zinc-800">
+      <div className="p-3 border-b border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] text-zinc-500 font-bold uppercase">원본 문서</span>
-          <button onClick={() => htmlInputRef.current?.click()} className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded hover:bg-zinc-700">
+          <button onClick={() => htmlInputRef.current?.click()} className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-2 py-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700">
             {uploading ? <Loader2 size={10} className="animate-spin" /> : <><Plus size={10} className="inline" /> 새 문서</>}
           </button>
         </div>
@@ -209,7 +209,7 @@ export function RagSidebar({ onRefresh }: RagSidebarProps) {
             <button
               key={doc.id}
               onClick={() => setActiveDocument(doc.id)}
-              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs ${activeDocumentId === doc.id ? "bg-blue-600 text-white" : "text-zinc-400 hover:bg-zinc-800"}`}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs ${activeDocumentId === doc.id ? "bg-blue-600 text-white" : "text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
             >
               <FileText size={12} />
               <span className="truncate flex-1">{doc.name}</span>
@@ -224,10 +224,10 @@ export function RagSidebar({ onRefresh }: RagSidebarProps) {
       </div>
 
       {/* 참조 자료 */}
-      <div className="p-3 border-b border-zinc-800">
+      <div className="p-3 border-b border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] text-zinc-500 font-bold uppercase">참조 자료</span>
-          <button onClick={() => refInputRef.current?.click()} disabled={!activeDocumentId} className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded hover:bg-zinc-700 disabled:opacity-30">
+          <button onClick={() => refInputRef.current?.click()} disabled={!activeDocumentId} className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-2 py-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 disabled:opacity-30">
             <Upload size={10} className="inline" /> 추가
           </button>
         </div>
@@ -244,7 +244,7 @@ export function RagSidebar({ onRefresh }: RagSidebarProps) {
               className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none"
               onKeyDown={(e) => e.key === "Enter" && handleUrlAdd()}
             />
-            <button onClick={handleUrlAdd} className="bg-zinc-800 border border-zinc-700 rounded px-2 text-zinc-400 hover:bg-zinc-700">
+            <button onClick={handleUrlAdd} className="bg-zinc-800 border border-zinc-700 rounded px-2 text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700">
               <Globe size={10} />
             </button>
           </div>
@@ -268,7 +268,7 @@ export function RagSidebar({ onRefresh }: RagSidebarProps) {
       </div>
 
       {/* 버전 이력 */}
-      <div className="flex-1 overflow-y-auto p-3 border-b border-zinc-800">
+      <div className="flex-1 overflow-y-auto p-3 border-b border-zinc-200 dark:border-zinc-800">
         <span className="text-[10px] text-zinc-500 font-bold uppercase">버전 이력</span>
         <div className="mt-2 space-y-1">
           {versions.map((ver, i) => (

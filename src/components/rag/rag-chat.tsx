@@ -159,16 +159,16 @@ export function RagChat() {
   const selectedSection = selectedSectionId ? sections.find((s) => s.id === selectedSectionId) : null;
 
   return (
-    <div className="w-[360px] bg-zinc-900 border-l border-zinc-800 flex flex-col overflow-hidden shrink-0">
+    <div className="w-[360px] bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden shrink-0">
       {/* Header */}
-      <div className="p-3 border-b border-zinc-800 flex items-center justify-between">
+      <div className="p-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
         <span className="text-sm font-bold text-zinc-200">💬 AI 어시스턴트</span>
         <span className="text-[10px] text-zinc-500">Claude</span>
       </div>
 
       {/* 대상 섹션 */}
       {selectedSection && (
-        <div className="mx-3 mt-2 px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded-md flex items-center gap-2 text-[10px] text-zinc-400">
+        <div className="mx-3 mt-2 px-3 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md flex items-center gap-2 text-[10px] text-zinc-400">
           <Target size={10} className="text-blue-400" />
           대상: <span className="bg-purple-600 text-white px-1.5 py-0.5 rounded text-[9px] font-bold">{selectedSection.heading_text}</span>
         </div>
@@ -176,7 +176,7 @@ export function RagChat() {
 
       {/* 참조 선택 */}
       {references.length > 0 && (
-        <div className="px-3 py-2 border-b border-zinc-800">
+        <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800">
           <div className="text-[10px] text-zinc-500 mb-1">참조 자료 선택:</div>
           <div className="space-y-0.5 max-h-20 overflow-y-auto">
             {references.map((ref) => (
@@ -204,7 +204,7 @@ export function RagChat() {
         {chatMessages.map((msg) => (
           <div key={msg.id} className={`max-w-[90%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
             msg.role === "user" ? "bg-blue-600 text-white self-end ml-auto rounded-br-sm" :
-            msg.role === "assistant" ? "bg-zinc-800 text-zinc-200 rounded-bl-sm" :
+            msg.role === "assistant" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-bl-sm" :
             "bg-zinc-950 text-zinc-500 text-center mx-auto border border-zinc-800 text-[10px]"
           }`}>
             <div className="whitespace-pre-wrap">{msg.content}</div>
@@ -212,7 +212,7 @@ export function RagChat() {
         ))}
 
         {isStreaming && streamingContent && (
-          <div className="max-w-[90%] px-3 py-2 rounded-xl rounded-bl-sm bg-zinc-800 text-zinc-200 text-xs leading-relaxed">
+          <div className="max-w-[90%] px-3 py-2 rounded-xl rounded-bl-sm bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs leading-relaxed">
             <div className="whitespace-pre-wrap">{streamingContent}</div>
             <Loader2 size={12} className="animate-spin mt-1 text-blue-400" />
           </div>
@@ -222,7 +222,7 @@ export function RagChat() {
       </div>
 
       {/* 입력 */}
-      <div className="p-3 border-t border-zinc-800">
+      <div className="p-3 border-t border-zinc-200 dark:border-zinc-800">
         <div className="flex gap-2">
           <textarea
             ref={textareaRef}
@@ -231,7 +231,7 @@ export function RagChat() {
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder={activeDocumentId ? "메시지 입력... (Shift+Enter 줄바꿈)" : "문서를 먼저 선택하세요"}
             disabled={!activeDocumentId || isStreaming}
-            className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 outline-none resize-none min-h-[36px] max-h-[100px] disabled:opacity-30 focus:border-blue-600"
+            className="flex-1 bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 outline-none resize-none min-h-[36px] max-h-[100px] disabled:opacity-30 focus:border-blue-600"
             rows={1}
           />
           <button
