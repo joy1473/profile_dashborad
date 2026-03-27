@@ -137,6 +137,14 @@ export function DocumentViewer() {
     const iframeDoc = iframeRef.current?.contentDocument;
     if (!iframeDoc) return;
 
+    // 요소에 고유 ID 부여 (없으면 생성)
+    const ensureId = (el: HTMLElement): string => {
+      if (!el.id) {
+        el.id = 'kv-' + uuid().slice(0, 8);
+      }
+      return el.id;
+    };
+
     const onMouseUp = () => {
       if (!editMode) return;
       const sel = iframeDoc.getSelection();
@@ -144,14 +152,15 @@ export function DocumentViewer() {
 
       const selectedText = sel.toString().trim();
 
-      // 하이라이트 초기화
       iframeDoc.querySelectorAll('.selected, .drag-selected').forEach((el) => el.classList.remove('selected', 'drag-selected'));
 
-      // 선택 범위의 컨테이너 요소 찾기
       const range = sel.getRangeAt(0);
       const container = range.commonAncestorContainer;
       const el = container.nodeType === 3 ? container.parentElement : container as HTMLElement;
-      if (el) el.classList?.add('drag-selected');
+      if (!el) return;
+
+      const elId = ensureId(el);
+      el.classList.add('drag-selected');
 
       setPendingSelection({
         id: uuid(),
@@ -163,7 +172,7 @@ export function DocumentViewer() {
           runIndex: 0,
           charOffset: 0,
           charLength: selectedText.length,
-          domElementId: el?.id || 'selection',
+          domElementId: elId,
         },
       });
       sel.removeAllRanges();
@@ -174,10 +183,11 @@ export function DocumentViewer() {
       const sel = iframeDoc.getSelection();
       if (sel && !sel.isCollapsed) return;
 
-      // 클릭한 요소 또는 가장 가까운 td/th/span/div 찾기
       const target = e.target as HTMLElement;
       const cell = target.closest('td, th') as HTMLElement | null;
       const clickTarget = cell || target;
+
+      const targetId = ensureId(clickTarget);
 
       iframeDoc.querySelectorAll('.selected, .drag-selected').forEach((el) => el.classList.remove('selected', 'drag-selected'));
       clickTarget.classList.add('selected');
@@ -194,7 +204,7 @@ export function DocumentViewer() {
           runIndex: 0,
           charOffset: 0,
           charLength: text.length,
-          domElementId: clickTarget.id || 'click',
+          domElementId: targetId,
         },
       });
     };

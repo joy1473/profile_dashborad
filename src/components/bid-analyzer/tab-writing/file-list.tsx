@@ -65,16 +65,44 @@ export function WritingTab() {
       const baseName = file.name.replace(/\.[^.]+$/, '');
 
       if (file.type === 'html') {
-        // HTML → 매핑 데이터로 텍스트 교체 → HTML 다운로드
-        let html = await file.blob.text();
+        // HTML → ValuePosition의 domElementId로 해당 요소를 찾아 Value 삽입
+        // model.renderedHtml에는 업로드 시 부여된 고유 ID가 포함됨
+        const html = file.model.renderedHtml || await file.blob.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        let changeCount = 0;
         for (const row of mappingData) {
-          const key = String(row['Key'] || '').trim();
           const value = String(row['Value'] || '').trim();
-          if (key && value) {
-            html = html.split(key).join(value);
+          if (!value) continue;
+
+          // ValuePosition에서 domElementId 추출
+          let domId = '';
+          try {
+            if (row['ValuePosition']) {
+              const pos = JSON.parse(String(row['ValuePosition']));
+              domId = pos.domElementId || '';
+            }
+          } catch { /* ignore */ }
+
+          if (domId && domId !== 'click' && domId !== 'selection' && domId !== 'manual') {
+            // ID로 정확한 요소 찾기
+            const el = doc.getElementById(domId);
+            if (el) {
+              // 기존 내부 span 구조 유지하면서 텍스트 교체
+              const innerSpan = el.querySelector('span');
+              if (innerSpan) {
+                innerSpan.textContent = value;
+              } else {
+                el.textContent = value;
+              }
+              changeCount++;
+            }
           }
         }
-        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+
+        const resultHtml = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
+        const blob = new Blob([resultHtml], { type: 'text/html;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         setResultUrl(url);
         setResultName(`${baseName}_${ts}.html`);

@@ -57,9 +57,15 @@ export function FileUpload() {
           }
         }
 
-        // DocumentModel 생성 (원본 HTML 그대로 사용, 텍스트 노드 감싸기 생략)
+        // 모든 td/th/span에 고유 ID 부여 (편집모드 선택 + 매핑 적용에 필요)
+        const tmpDoc = new DOMParser().parseFromString(htmlContent, 'text/html');
+        let idIdx = 0;
+        tmpDoc.querySelectorAll('td, th').forEach((el) => {
+          if (!el.id) el.id = 'cell-' + (idIdx++);
+        });
+        const renderedHtml = '<!DOCTYPE html>' + tmpDoc.documentElement.outerHTML;
+
         const positionMap = new Map<string, DocumentPosition>();
-        const renderedHtml = htmlContent;
 
         const model: DocumentModel = {
           fileName: htmlFile.name,
