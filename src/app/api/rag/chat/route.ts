@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
   try {
-    const { message, referenceTexts, targetSectionHtml, targetSectionHeading, documentSections } = await request.json();
+    const { message, documentText, currentHtml, referenceTexts, targetSectionHtml, targetSectionHeading, documentSections } = await request.json();
 
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
     if (!ANTHROPIC_API_KEY) {
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
 
     // Claude API 호출 (스트리밍)
     const systemPrompt = buildSystemPrompt(documentSections, targetSectionHeading);
-    const userContent = buildUserContent(message, referenceTexts, targetSectionHtml);
+    const userContent = buildUserContent(message, documentText, currentHtml, referenceTexts, targetSectionHtml);
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -85,28 +85,49 @@ export async function POST(request: Request) {
 }
 
 function buildSystemPrompt(sections: string[], targetHeading: string | null): string {
-  return `당신은 한국어 문서 작성 전문 AI 어시스턴트입니다.
-사용자가 사업계획서, 제안서, 보고서 등의 섹션 내용을 요청하면 참조 자료를 기반으로 정확하고 전문적인 내용을 작성합니다.
+  return `당신은 한국어 문서 작성 및 편집 전문 AI 어시스턴트입니다.
 
-문서 섹션 목록: ${sections.filter(Boolean).join(", ")}
+중요: 사용자가 업로드한 HTML 문서의 내용이 아래에 제공됩니다. 이 문서의 내용을 읽고, 사용자의 요청에 따라 수정하거나 새 내용을 작성합니다.
+
+문서 섹션: ${sections.filter(Boolean).join(", ")}
 ${targetHeading ? `현재 대상 섹션: "${targetHeading}"` : ""}
 
-작성 규칙:
-- 한국어로 작성
-- 표(table)는 HTML 태그로 작성
-- 정량적 수치와 근거를 포함
-- 간결하고 전문적인 톤 유지
-- HTML 코드를 포함할 경우 \`\`\`html 코드블록으로 감싸기`;
+작업 규칙:
+1. 문서 수정 요청 시: 수정된 전체 HTML을 \`\`\`html 코드블록으로 반환
+2. 부분 수정 요청 시: 해당 부분만 수정하여 반환
+3. 질문 시: 문서 내용을 기반으로 답변
+4. 한국어로 작성, 표(table)는 HTML 태그 유지
+5. 원본 서식(CSS class, style)을 최대한 보존`;
 }
 
-function buildUserContent(message: string, refTexts: string, targetHtml: string | null): string {
+function buildUserContent(message: string, documentText: string | null, currentHtml: string | null, refTexts: string, targetHtml: string | null): string {
   let content = message;
+
+  if (documentText) {
+    content += `\n\n--- 현재 문서 텍스트 내용 (발췌) ---\n${documentText.slice(0, 6000)}`;
+  }
+
+  if (currentHtml) {
+    // HTML에서 주요 구조만 추출 (body 내부, 스타일 제외)
+    const bodyMatch = currentHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    const bodyHtml = bodyMatch ? bodyMatch[1] : currentHtml;
+    // 너무 긴 인라인 스타일/SVG 등 제거하여 토큰 절약
+    const cleaned = bodyHtml
+      .replace(/<svg[\s\S]*?<\/svg>/gi, "[SVG 이미지]")
+      .replace(/data:image\/[^"']*/gi, "[BASE64 이미지]")
+      .replace(/style="[^"]{200,}"/gi, 'style="..."')
+      .slice(0, 15000);
+    content += `\n\n--- 현재 문서 HTML (구조) ---\n${cleaned}`;
+  }
+
   if (refTexts) {
-    content += `\n\n--- 참조 자료 ---\n${refTexts.slice(0, 8000)}`;
+    content += `\n\n--- 참조 자료 ---\n${refTexts.slice(0, 5000)}`;
   }
+
   if (targetHtml) {
-    content += `\n\n--- 현재 섹션 HTML ---\n${targetHtml.slice(0, 2000)}`;
+    content += `\n\n--- 대상 섹션 HTML ---\n${targetHtml.slice(0, 2000)}`;
   }
+
   return content;
 }
 

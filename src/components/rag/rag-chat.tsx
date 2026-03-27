@@ -9,7 +9,7 @@ export function RagChat() {
   const {
     activeDocumentId, chatMessages, appendMessage, isStreaming, streamingContent, setStreaming,
     selectedSectionId, sections, references, selectedReferenceIds, toggleReference,
-    sessionId, setSessionId, setChatMessages, currentHtml, pushUndo, updateHtml, setVersions,
+    sessionId, setSessionId, setChatMessages, currentHtml, pushUndo, updateHtml, versions, setVersions,
   } = useRagStore();
 
   const [input, setInput] = useState("");
@@ -56,6 +56,48 @@ export function RagChat() {
     })();
   }, [activeDocumentId, setSessionId, setChatMessages]);
 
+  // HTML 코드블록 추출
+  const extractHtmlBlock = (content: string): string | null => {
+    const match = content.match(/```html\s*([\s\S]*?)```/);
+    return match ? match[1].trim() : null;
+  };
+
+  // AI 응답 HTML을 문서에 적용
+  const applyHtmlToDocument = useCallback(async (newHtml: string) => {
+    if (!currentHtml || !activeDocumentId) return;
+    pushUndo(currentHtml);
+
+    // newHtml이 전체 문서인지 부분인지 판단
+    const isFullDoc = newHtml.includes("<html") || newHtml.includes("<!DOCTYPE") || newHtml.includes("<body");
+    const updatedHtml = isFullDoc ? newHtml : currentHtml; // 전체면 교체, 부분이면 현재 유지 (TODO: 섹션별 교체)
+
+    if (isFullDoc) {
+      updateHtml(updatedHtml);
+    }
+
+    // 새 버전 자동 생성
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const latestVer = versions[0];
+    const nextNum = latestVer ? Math.round((latestVer.version_number + 0.1) * 10) / 10 : 0.1;
+
+    await supabase.from("rag_versions").insert({
+      document_id: activeDocumentId,
+      version_label: `v${nextNum.toFixed(1)}`,
+      version_number: nextNum,
+      html_content: updatedHtml,
+      html_size_bytes: new Blob([updatedHtml]).size,
+      created_by: user.id,
+      created_via: "ai_edit",
+    });
+
+    const { data: allVers } = await supabase.from("rag_versions").select("*").eq("document_id", activeDocumentId).order("version_number", { ascending: false });
+    if (allVers) setVersions(allVers);
+
+    alert("문서에 적용되었습니다! (v" + nextNum.toFixed(1) + ")");
+  }, [currentHtml, activeDocumentId, versions, pushUndo, updateHtml, setVersions]);
+
   // 메시지 전송
   const handleSend = useCallback(async () => {
     if (!input.trim() || !activeDocumentId || !sessionId || isStreaming) return;
@@ -93,6 +135,13 @@ export function RagChat() {
     setStreaming("", true);
 
     try {
+      // 문서 내용 요약 (토큰 절약을 위해 텍스트만 추출, 최대 8000자)
+      let documentText = "";
+      if (currentHtml) {
+        const tmp = new DOMParser().parseFromString(currentHtml, "text/html");
+        documentText = (tmp.body.textContent || "").replace(/\s+/g, " ").trim().slice(0, 8000);
+      }
+
       const res = await fetch("/api/rag/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -100,6 +149,8 @@ export function RagChat() {
           message,
           documentId: activeDocumentId,
           sessionId,
+          documentText,
+          currentHtml: currentHtml?.slice(0, 30000) ?? null,
           referenceTexts: refTexts,
           targetSectionHtml: targetSection?.html_fragment ?? null,
           targetSectionHeading: targetSection?.heading_text ?? null,
@@ -208,9 +259,17 @@ export function RagChat() {
           <div key={msg.id} className={`max-w-[90%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
             msg.role === "user" ? "bg-blue-600 text-white self-end ml-auto rounded-br-sm" :
             msg.role === "assistant" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-bl-sm" :
-            "bg-zinc-950 text-zinc-500 text-center mx-auto border border-zinc-800 text-[10px]"
+            "bg-zinc-50 dark:bg-zinc-950 text-zinc-500 text-center mx-auto border border-zinc-200 dark:border-zinc-800 text-[10px]"
           }`}>
             <div className="whitespace-pre-wrap">{msg.content}</div>
+            {msg.role === "assistant" && extractHtmlBlock(msg.content) && (
+              <button
+                onClick={() => applyHtmlToDocument(extractHtmlBlock(msg.content)!)}
+                className="mt-2 px-3 py-1 bg-green-600 text-white text-[10px] font-bold rounded hover:bg-green-700"
+              >
+                ✅ 문서에 적용
+              </button>
+            )}
           </div>
         ))}
 
