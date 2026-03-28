@@ -206,7 +206,7 @@ export function DocumentViewer() {
           charOffset: 0,
           charLength: text.length,
           domElementId: targetId,
-          cellRef: innerHtml, // 셀의 innerHTML 저장
+          cellRef: clickTarget.innerHTML,
         },
       });
     };
