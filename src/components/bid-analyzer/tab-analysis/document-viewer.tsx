@@ -192,9 +192,8 @@ export function DocumentViewer() {
       // 하이라이트 없음 (원본 보존)
       // 하이라이트 없음
 
-      const text = clickTarget.textContent?.trim() || '';
-      // innerHTML을 저장하여 나중에 정확한 위치 교체에 사용
-      const innerHtml = clickTarget.innerHTML;
+      // innerText는 <br>, 블록 요소의 줄바꿈을 \n으로 반환 (개행 보존)
+      const text = clickTarget.innerText?.trim() || '';
 
       setPendingSelection({
         id: uuid(),
