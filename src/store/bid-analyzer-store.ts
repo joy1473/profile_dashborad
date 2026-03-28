@@ -9,8 +9,8 @@ import type {
 
 interface BidAnalyzerState {
   // Tab
-  activeTab: 'analysis' | 'writing';
-  setActiveTab: (tab: 'analysis' | 'writing') => void;
+  activeTab: 'analysis' | 'writing' | 'binding';
+  setActiveTab: (tab: 'analysis' | 'writing' | 'binding') => void;
 
   // Files
   uploadedFiles: UploadedFile[];

@@ -5,7 +5,8 @@ import { FileUpload } from './tab-analysis/file-upload';
 import { DocumentViewer } from './tab-analysis/document-viewer';
 import { KvPairPanel } from './tab-analysis/kv-pair-panel';
 import { WritingTab } from './tab-writing/file-list';
-import { FileSearch, FileOutput, Edit3, Eye } from 'lucide-react';
+import { BindingTab } from './tab-binding/binding-tab';
+import { FileSearch, FileOutput, Edit3, Eye, FileSymlink } from 'lucide-react';
 
 export function AnalyzerTabs() {
   const { activeTab, setActiveTab, editMode, toggleEditMode, documentModel } = useBidAnalyzerStore();
@@ -36,6 +37,17 @@ export function AnalyzerTabs() {
           >
             <FileOutput className="w-4 h-4" />
             입찰작성
+          </button>
+          <button
+            onClick={() => setActiveTab('binding')}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'binding'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <FileSymlink className="w-4 h-4" />
+            입찰바인딩
           </button>
         </div>
 
@@ -72,6 +84,8 @@ export function AnalyzerTabs() {
               <KvPairPanel />
             </div>
           </div>
+        ) : activeTab === 'binding' ? (
+          <BindingTab />
         ) : (
           <div className="p-4 max-w-2xl">
             <WritingTab />
