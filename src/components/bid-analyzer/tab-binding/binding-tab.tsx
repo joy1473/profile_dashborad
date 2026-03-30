@@ -111,38 +111,96 @@ export function BindingTab() {
     setChatMessages(prev => [...prev, { role: 'user', text: input }]);
     setChatInput('');
 
-    // 간단한 교체 명령 파싱: "A → B" 또는 "A를 B로 변경"
     let newHtml = result.html;
     let response = '';
 
-    const arrowMatch = input.match(/(.+?)\s*[→=>]\s*(.+)/);
-    const replaceMatch = input.match(/['""]?(.+?)['""]?\s*(?:를|을)\s*['""]?(.+?)['""]?\s*(?:로|으로)\s*(?:변경|교체|수정)/);
+    // 따옴표 제거 유틸
+    const stripQuotes = (s: string) => s.replace(/^["'""\u201C\u201D]+|["'""\u201C\u201D]+$/g, '').trim();
+
+    // 파싱: "A" -> "B", "A" → "B", "A" => "B"
+    const arrowMatch = input.match(/(.+?)\s*(?:→|->|=>)\s*(.+)/);
+    const replaceMatch = input.match(/(.+?)\s*(?:를|을)\s*(.+?)\s*(?:로|으로)\s*(?:변경|교체|수정)/);
 
     const match = arrowMatch || replaceMatch;
     if (match) {
-      const search = match[1].trim();
-      const replace = match[2].trim();
+      const search = stripQuotes(match[1]);
+      const replace = stripQuotes(match[2]);
 
-      if (newHtml.includes(search)) {
-        newHtml = newHtml.replace(search, replace);
-        response = `"${search}" → "${replace}" 교체 완료`;
+      if (!search) {
+        response = '검색 텍스트가 비어 있습니다.';
       } else {
-        // span 내부에서 검색 시도
-        const spanRegex = new RegExp(
-          `(<span[^>]*>)([^<]*${search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^<]*)(</span>)`,
-          'g'
-        );
-        if (spanRegex.test(newHtml)) {
+        // 1차: 직접 매칭
+        let found = false;
+        if (newHtml.includes(search)) {
+          newHtml = newHtml.replace(search, replace);
+          response = `교체 완료: "${search.slice(0,30)}..." → "${replace.slice(0,30)}..."`;
+          found = true;
+        }
+
+        // 2차: &nbsp; 를 공백으로 치환한 매칭
+        if (!found) {
+          const normalized = newHtml.replace(/&nbsp;/g, ' ');
+          if (normalized.includes(search)) {
+            // 원본에서 &nbsp; 포함 버전 찾기
+            const nbspSearch = search.replace(/ /g, '(?:&nbsp;| )');
+            const nbspRegex = new RegExp(nbspSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\(\\\?:&nbsp;\\\| \\\)/g, '(?:&nbsp;| )'));
+            if (nbspRegex.test(newHtml)) {
+              newHtml = newHtml.replace(nbspRegex, replace);
+              response = `교체 완료 (nbsp 매칭): "${search.slice(0,30)}..."`;
+              found = true;
+            }
+          }
+        }
+
+        // 3차: span.hrt 내부 텍스트에서 검색 (HTML 태그 무시)
+        if (!found) {
+          const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          // &nbsp;를 \s로 확장
+          const flexSearch = escapedSearch.replace(/\\ /g, '(?:&nbsp;|\\s)');
+          const spanRegex = new RegExp(
+            `(<span[^>]*>)([^<]*?)(</span>)`,
+            'g'
+          );
+          let matchCount = 0;
           newHtml = newHtml.replace(spanRegex, (m, open, text, close) => {
-            return open + text.replace(search, replace) + close;
+            const plainText = text.replace(/&nbsp;/g, ' ');
+            if (plainText.includes(search) && matchCount === 0) {
+              matchCount++;
+              return open + plainText.replace(search, replace) + close;
+            }
+            return m;
           });
-          response = `span 내 "${search}" → "${replace}" 교체 완료`;
-        } else {
-          response = `"${search}" 텍스트를 찾을 수 없습니다.`;
+          if (matchCount > 0) {
+            response = `span 내 교체 완료: "${search.slice(0,30)}..."`;
+            found = true;
+          }
+        }
+
+        // 4차: 부분 키워드 매칭 (처음 20자로 검색)
+        if (!found && search.length > 20) {
+          const partial = search.slice(0, 20);
+          const spanRegex = new RegExp(`(<span[^>]*>)([^<]*?)(</span>)`, 'g');
+          let matchCount = 0;
+          newHtml = newHtml.replace(spanRegex, (m, open, text, close) => {
+            const plainText = text.replace(/&nbsp;/g, ' ');
+            if (plainText.includes(partial) && matchCount === 0) {
+              matchCount++;
+              return open + replace + close;
+            }
+            return m;
+          });
+          if (matchCount > 0) {
+            response = `부분 매칭 교체: "${partial}..." 포함 span → "${replace.slice(0,30)}..."`;
+            found = true;
+          }
+        }
+
+        if (!found) {
+          response = `"${search.slice(0,40)}..." 텍스트를 찾을 수 없습니다. 원본 HTML의 정확한 텍스트를 확인하세요.`;
         }
       }
     } else {
-      response = '사용법: "변경 전 텍스트 → 변경 후 텍스트" 또는 "A를 B로 변경"';
+      response = '사용법:\n• "변경 전" → "변경 후"\n• "변경 전" -> "변경 후"\n• "A를 B로 변경"';
     }
 
     const updatedResult = { ...result, html: newHtml };
