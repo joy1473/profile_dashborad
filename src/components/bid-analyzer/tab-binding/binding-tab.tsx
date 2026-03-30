@@ -82,7 +82,14 @@ export function BindingTab() {
     if (!templateHtml || !contentHtml) return;
     setStep('mapping');
 
-    const bindResult = bindFields(templateHtml, fields);
+    // 필드가 비어있으면 내용에서 다시 추출
+    let bindingFields = fields;
+    if (bindingFields.length === 0) {
+      bindingFields = extractFieldsFromContent(contentHtml);
+      setFields(bindingFields);
+    }
+
+    const bindResult = bindFields(templateHtml, bindingFields);
     setResult(bindResult);
     setStep('result');
 

@@ -25,6 +25,37 @@ export interface BindingResult {
 }
 
 /**
+ * HWP 양식 placeholder 키워드 → 내용 필드 매핑
+ * HWP 양식에서 흔히 사용하는 placeholder 텍스트 목록
+ */
+const HWP_PLACEHOLDERS: Record<string, string[]> = {
+  '과제명': ['과제명', '과 제 명', '과제 명'],
+  '기관명': ['기관명', '기 관 명', '기관 명', '수요기업명 기재', '공급기업명 기재'],
+  '대표자': ['대표자', '대표자 성명', '대표자성명'],
+  '사업자등록번호': ['사업자등록번호', '사업자등록번'],
+  '주소': ['주소', '주 소', '본사주소'],
+  '설립일': ['설립일', '설립연월일', '설립 연월일'],
+  '전화': ['전화', '대표전화', '사무실전화'],
+  '핸드폰': ['핸드폰', '연락처'],
+  '이메일': ['E-mail', 'E-Mail', '이메일'],
+  '산업분야': ['산업분야'],
+  'AI기술분류': ['AI기술분류'],
+  '사업기간': ['사업수행기간', '사업기간'],
+  '정부지원금': ['정부지원금'],
+  '민간부담금': ['민간부담금'],
+  '총괄책임자': ['총괄책임자'],
+  '과제책임자': ['과제책임자'],
+  '실무책임자': ['실무책임자'],
+  '직원수': ['직원수', '종업원수'],
+  '홈페이지': ['홈페이지'],
+};
+
+/** 문자열 정규화: &nbsp; 공백 제거 후 비교용 */
+function normalize(s: string): string {
+  return s.replace(/&nbsp;/g, ' ').replace(/\s+/g, '').trim();
+}
+
+/**
  * 내용 HTML에서 key-value 필드를 자동 추출
  */
 export function extractFieldsFromContent(contentHtml: string): BindingField[] {
@@ -42,10 +73,20 @@ export function extractFieldsFromContent(contentHtml: string): BindingField[] {
           const label = ths[i].textContent?.trim() || '';
           const value = tds[i].textContent?.trim() || '';
           if (label && value && value !== '※ 추후보완') {
+            // HWP placeholder 키워드 매핑
+            const normalLabel = normalize(label);
+            const matchedKeywords: string[] = [];
+            for (const [, keywords] of Object.entries(HWP_PLACEHOLDERS)) {
+              if (keywords.some(k => normalize(k) === normalLabel || normalLabel.includes(normalize(k)))) {
+                matchedKeywords.push(...keywords);
+              }
+            }
+
             fields.push({
               id: `field-${idx++}`,
               label,
               value,
+              keyword: matchedKeywords[0] || undefined,
               status: 'pending',
             });
           }
@@ -54,17 +95,36 @@ export function extractFieldsFromContent(contentHtml: string): BindingField[] {
     });
   });
 
-  // 2) lv1/lv2/lv3 구조에서 서술형 텍스트 추출
+  // 2) lv1/lv2/lv3 서술형 텍스트
   doc.querySelectorAll('.lv1, .lv2').forEach((el) => {
     const text = el.textContent?.trim() || '';
     if (text.length > 20) {
-      // strong 태그가 있으면 그것을 label로
       const strong = el.querySelector('strong');
       const label = strong?.textContent?.trim() || text.slice(0, 30);
       fields.push({
         id: `field-${idx++}`,
         label: label.replace(/^[❍\-⦁•]\s*/, ''),
         value: text.replace(/^[❍\-⦁•]\s*/, ''),
+        status: 'pending',
+      });
+    }
+  });
+
+  // 3) body-section / summary-section 내 h2, h3 + 다음 형제 텍스트
+  doc.querySelectorAll('h2.section, h3.sub').forEach((heading) => {
+    const label = heading.textContent?.trim() || '';
+    let content = '';
+    let sibling = heading.nextElementSibling;
+    while (sibling && !['H1','H2','H3'].includes(sibling.tagName)) {
+      content += (sibling.textContent?.trim() || '') + ' ';
+      sibling = sibling.nextElementSibling;
+    }
+    content = content.trim();
+    if (label && content.length > 30) {
+      fields.push({
+        id: `field-${idx++}`,
+        label: label.replace(/^\d+\.\s*/, ''),
+        value: content.slice(0, 500),
         status: 'pending',
       });
     }
@@ -181,6 +241,43 @@ export function bindFields(templateHtml: string, fields: BindingField[]): Bindin
       if (result.found) {
         html = result.html;
         found = true;
+      }
+    }
+
+    // 4차: &nbsp; 무시 fuzzy 매칭 — HWP HTML의 "과 &nbsp;제 &nbsp;명" 같은 패턴
+    if (!found) {
+      const normalLabel = normalize(f.label);
+      // 모든 span.hrt에서 정규화된 텍스트로 검색
+      const spanRegex = /<span class="hrt[^"]*"[^>]*>([^<]*)<\/span>/g;
+      let spanMatch;
+      while ((spanMatch = spanRegex.exec(html)) !== null) {
+        const spanText = spanMatch[1];
+        const normalSpan = normalize(spanText);
+        if (normalSpan.includes(normalLabel) || normalLabel.includes(normalSpan)) {
+          // 이 span 다음에 오는 빈 span 또는 같은 셀의 값 영역에 값 삽입
+          const afterPos = spanMatch.index + spanMatch[0].length;
+          const afterHtml = html.slice(afterPos, afterPos + 500);
+
+          // 빈 hls div 찾기 (값이 들어갈 위치)
+          const emptyHls = afterHtml.match(/(height:\d+\.?\d*mm;width:\d+\.?\d*mm;">)(<\/div>)/);
+          if (emptyHls) {
+            const oldStr = emptyHls[0];
+            const newStr = emptyHls[1] + `<span class="hrt">${safeValue}</span>` + emptyHls[2];
+            html = html.slice(0, afterPos) + afterHtml.replace(oldStr, newStr) + html.slice(afterPos + 500);
+            found = true;
+            break;
+          }
+
+          // 빈 span 찾기
+          const emptySpan = afterHtml.match(/<span class="hrt[^"]*"[^>]*><\/span>/);
+          if (emptySpan) {
+            const oldStr = emptySpan[0];
+            const newStr = oldStr.replace('></span>', `>${safeValue}</span>`);
+            html = html.slice(0, afterPos) + afterHtml.replace(oldStr, newStr) + html.slice(afterPos + 500);
+            found = true;
+            break;
+          }
+        }
       }
     }
 
