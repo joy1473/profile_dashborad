@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { Upload, FileText, Play, Download, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Send } from 'lucide-react';
 import type { BindingField, BindingResult } from '@/lib/hwp-binder';
-import { extractFieldsFromContent, bindFields, simpleReplace } from '@/lib/hwp-binder';
+import { extractFieldsFromContent, bindFields, autoGenerateFields } from '@/lib/hwp-binder';
 
 type Step = 'upload' | 'mapping' | 'result';
 
@@ -82,20 +82,20 @@ export function BindingTab() {
     if (!templateHtml || !contentHtml) return;
     setStep('mapping');
 
-    // 필드가 비어있으면 내용에서 다시 추출
-    let bindingFields = fields;
-    if (bindingFields.length === 0) {
-      bindingFields = extractFieldsFromContent(contentHtml);
-      setFields(bindingFields);
-    }
+    // 템플릿 placeholder + 내용 자동 매핑으로 필드 생성
+    const autoFields = autoGenerateFields(templateHtml, contentHtml);
 
-    const bindResult = bindFields(templateHtml, bindingFields);
+    // 기존 수동 수정 필드가 있으면 병합
+    const mergedFields = autoFields.length > 0 ? autoFields : fields;
+    setFields(mergedFields);
+
+    const bindResult = bindFields(templateHtml, mergedFields);
     setResult(bindResult);
     setStep('result');
 
     setChatMessages(prev => [...prev, {
       role: 'system',
-      text: `바인딩 완료: ${bindResult.stats.bound}건 성공, ${bindResult.stats.skipped}건 스킵, ${bindResult.stats.error}건 실패`,
+      text: `바인딩 완료: ${bindResult.stats.bound}건 성공, ${bindResult.stats.skipped}건 스킵, ${bindResult.stats.error}건 실패\n\n매핑된 필드:\n${mergedFields.slice(0, 10).map(f => `• ${f.label}: ${f.value.slice(0, 40)}...`).join('\n')}${mergedFields.length > 10 ? `\n... 외 ${mergedFields.length - 10}건` : ''}`,
     }]);
 
     // iframe에 결과 표시

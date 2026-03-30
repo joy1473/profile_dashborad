@@ -1,21 +1,18 @@
 /**
- * HWP HTML 바인딩 엔진
- * 케이비드 fill-by-mapping-v2.js + fill-v03.js 의 브라우저 버전
+ * HWP HTML 바인딩 엔진 v2
  *
- * 전략:
- * 1. HWP HTML(절대좌표 span.hrt) 구조를 유지하면서 텍스트만 교체
- * 2. 내용 HTML에서 key-value 자동 추출
- * 3. domElementId(kv-xxx, cell-xxx) 또는 키워드 매칭으로 위치 탐색
+ * 접근: 케이비드 fill-v03.js 방식
+ * 1. 템플릿(HWP HTML)에서 placeholder 텍스트를 스캔
+ * 2. 내용 HTML에서 대응값 추출
+ * 3. placeholder → 실제값 교체 (span.hrt 내부 텍스트만)
  */
 
 export interface BindingField {
   id: string;
-  label: string;          // 필드 라벨 (과제명, 기관명 등)
-  value: string;          // 채울 값
-  domId?: string;         // HWP HTML 내 요소 ID (kv-xxx)
-  keyword?: string;       // 키워드 매칭 (span 텍스트 검색)
+  label: string;
+  value: string;
+  placeholder?: string;     // 템플릿에서 찾은 원본 placeholder 텍스트
   status: 'pending' | 'bound' | 'error' | 'skipped';
-  position?: { page: number; context: string };
 }
 
 export interface BindingResult {
@@ -24,180 +21,136 @@ export interface BindingResult {
   stats: { total: number; bound: number; skipped: number; error: number };
 }
 
-/**
- * HWP 양식 placeholder 키워드 → 내용 필드 매핑
- * HWP 양식에서 흔히 사용하는 placeholder 텍스트 목록
- */
-const HWP_PLACEHOLDERS: Record<string, string[]> = {
-  '과제명': ['과제명', '과 제 명', '과제 명'],
-  '기관명': ['기관명', '기 관 명', '기관 명', '수요기업명 기재', '공급기업명 기재'],
-  '대표자': ['대표자', '대표자 성명', '대표자성명'],
-  '사업자등록번호': ['사업자등록번호', '사업자등록번'],
-  '주소': ['주소', '주 소', '본사주소'],
-  '설립일': ['설립일', '설립연월일', '설립 연월일'],
-  '전화': ['전화', '대표전화', '사무실전화'],
-  '핸드폰': ['핸드폰', '연락처'],
-  '이메일': ['E-mail', 'E-Mail', '이메일'],
-  '산업분야': ['산업분야'],
-  'AI기술분류': ['AI기술분류'],
-  '사업기간': ['사업수행기간', '사업기간'],
-  '정부지원금': ['정부지원금'],
-  '민간부담금': ['민간부담금'],
-  '총괄책임자': ['총괄책임자'],
-  '과제책임자': ['과제책임자'],
-  '실무책임자': ['실무책임자'],
-  '직원수': ['직원수', '종업원수'],
-  '홈페이지': ['홈페이지'],
-};
+/** &nbsp; → 공백, 연속공백 제거 */
+function norm(s: string): string {
+  return s.replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+}
 
-/** 문자열 정규화: &nbsp; 공백 제거 후 비교용 */
-function normalize(s: string): string {
-  return s.replace(/&nbsp;/g, ' ').replace(/\s+/g, '').trim();
+/** 개행 → 공백 (HWP span은 단일 행) */
+function sanitize(s: string): string {
+  return s.replace(/\r?\n/g, ' ').replace(/\s{2,}/g, ' ').trim();
 }
 
 /**
- * 내용 HTML에서 key-value 필드를 자동 추출
+ * 템플릿 HTML에서 모든 span.hrt 텍스트를 추출
  */
-export function extractFieldsFromContent(contentHtml: string): BindingField[] {
+function extractAllSpans(html: string): { text: string; raw: string; pos: number }[] {
+  const regex = /class="hrt[^"]*"[^>]*>([^<]*)<\/span>/g;
+  const spans: { text: string; raw: string; pos: number }[] = [];
+  let m;
+  while ((m = regex.exec(html)) !== null) {
+    const raw = m[1];
+    const text = norm(raw);
+    if (text.length > 0) {
+      spans.push({ text, raw, pos: m.index });
+    }
+  }
+  return spans;
+}
+
+/**
+ * 내용 HTML에서 key-value 맵 추출 (th→td, label→value)
+ */
+export function extractContentMap(contentHtml: string): Map<string, string> {
   const doc = new DOMParser().parseFromString(contentHtml, 'text/html');
-  const fields: BindingField[] = [];
-  let idx = 0;
+  const map = new Map<string, string>();
 
-  // 1) table에서 th-td 쌍 추출
-  doc.querySelectorAll('table').forEach((table) => {
-    table.querySelectorAll('tr').forEach((tr) => {
-      const ths = tr.querySelectorAll('th');
-      const tds = tr.querySelectorAll('td');
-      if (ths.length > 0 && tds.length > 0) {
-        for (let i = 0; i < ths.length && i < tds.length; i++) {
-          const label = ths[i].textContent?.trim() || '';
-          const value = tds[i].textContent?.trim() || '';
-          if (label && value && value !== '※ 추후보완') {
-            // HWP placeholder 키워드 매핑
-            const normalLabel = normalize(label);
-            const matchedKeywords: string[] = [];
-            for (const [, keywords] of Object.entries(HWP_PLACEHOLDERS)) {
-              if (keywords.some(k => normalize(k) === normalLabel || normalLabel.includes(normalize(k)))) {
-                matchedKeywords.push(...keywords);
-              }
-            }
-
-            fields.push({
-              id: `field-${idx++}`,
-              label,
-              value,
-              keyword: matchedKeywords[0] || undefined,
-              status: 'pending',
-            });
-          }
-        }
-      }
-    });
-  });
-
-  // 2) lv1/lv2/lv3 서술형 텍스트
-  doc.querySelectorAll('.lv1, .lv2').forEach((el) => {
-    const text = el.textContent?.trim() || '';
-    if (text.length > 20) {
-      const strong = el.querySelector('strong');
-      const label = strong?.textContent?.trim() || text.slice(0, 30);
-      fields.push({
-        id: `field-${idx++}`,
-        label: label.replace(/^[❍\-⦁•]\s*/, ''),
-        value: text.replace(/^[❍\-⦁•]\s*/, ''),
-        status: 'pending',
-      });
+  // 1) table th-td 쌍
+  doc.querySelectorAll('tr').forEach((tr) => {
+    const ths = tr.querySelectorAll('th');
+    const tds = tr.querySelectorAll('td');
+    for (let i = 0; i < ths.length && i < tds.length; i++) {
+      const label = ths[i].textContent?.trim() || '';
+      const value = tds[i].textContent?.trim() || '';
+      if (label && value) map.set(label, value);
     }
   });
 
-  // 3) body-section / summary-section 내 h2, h3 + 다음 형제 텍스트
-  doc.querySelectorAll('h2.section, h3.sub').forEach((heading) => {
-    const label = heading.textContent?.trim() || '';
+  // 2) h2/h3 다음 본문 텍스트
+  doc.querySelectorAll('h1.chapter, h2.section, h3.sub').forEach((h) => {
+    const label = h.textContent?.trim().replace(/^\d+\.\s*/, '') || '';
     let content = '';
-    let sibling = heading.nextElementSibling;
-    while (sibling && !['H1','H2','H3'].includes(sibling.tagName)) {
-      content += (sibling.textContent?.trim() || '') + ' ';
-      sibling = sibling.nextElementSibling;
+    let sib = h.nextElementSibling;
+    while (sib && !['H1','H2','H3'].includes(sib.tagName)) {
+      content += (sib.textContent?.trim() || '') + ' ';
+      sib = sib.nextElementSibling;
     }
-    content = content.trim();
-    if (label && content.length > 30) {
-      fields.push({
-        id: `field-${idx++}`,
-        label: label.replace(/^\d+\.\s*/, ''),
-        value: content.slice(0, 500),
-        status: 'pending',
-      });
+    if (label && content.trim().length > 10) {
+      map.set(label, content.trim().slice(0, 1000));
     }
   });
 
-  return fields;
+  // 3) .lv1 strong → 뒤 텍스트
+  doc.querySelectorAll('.lv1').forEach((el) => {
+    const strong = el.querySelector('strong');
+    if (strong) {
+      const label = strong.textContent?.trim().replace(/^\(|\)$/g, '') || '';
+      const value = el.textContent?.trim().replace(/^[❍]\s*/, '') || '';
+      if (label && value.length > 10) map.set(label, value);
+    }
+  });
+
+  return map;
 }
 
 /**
- * HWP HTML의 span.hrt에서 키워드를 찾아 텍스트 교체
- * (케이비드 fill-v03.js의 replaceInSpan 브라우저 버전)
+ * HWP 양식의 placeholder → 내용 HTML의 키 매핑 테이블
+ * key: placeholder 텍스트의 핵심 키워드
+ * value: 내용 HTML에서 찾을 label 후보들
  */
-function replaceInSpan(html: string, keyword: string, newText: string): { html: string; found: boolean } {
-  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const PLACEHOLDER_MAP: [string, string[]][] = [
+  // 요약 섹션 placeholders
+  ['수요기업명 기재', ['기관명', '주관기관', '수요기업']],
+  ['공급기업명 기재', ['기관명', '참여기관', '공급기업']],
+  ['주요역할 기재', ['주요역할', '주요 역할']],
+  ['추진목표(교육목표) 기재', ['추진목표', '최종 목표', '사업의 목적']],
+  ['추진내용별 세부 목표를 간략히 기재', ['세부 목표', '세부목표']],
+  ['역량 및 전문성 기재', ['수행 역량', '사업수행능력', '수행능력']],
+  ['정량성과 및 정성적 성과목표 기술', ['성과목표', '성과 지표', '정량 지표']],
+  ['진단 결과 반영(안) 기재', ['역량진단', 'KSA', '역량진단·컨설팅']],
+  ['교육과정 운영방안 기재', ['교육과정 운영', '교육 체계', '교육과정 체계']],
+  ['AX 추진을 위한 기본(안)을 기재', ['AX 실행계획', '검증컨설팅', 'PoC']],
+  ['전략 검증(PoC) 방안을 기재', ['PoC 과제', 'PoC 범위', 'PoC 설계']],
+  ['성과조사 방안, 홍보활동 등 기재', ['사후관리', '성과 관리', '후속 확장']],
+  ['가치 창출 노력 정도 기재', ['사회적 가치', '대중소 상생']],
+  ['개인정보보호 관리방안 기재', ['개인정보보호', '데이터 보안', '비식별화']],
+
+  // 본문 섹션 placeholders
+  ['사업 참여 및 AX 추진 배경', ['사업 추진 배경', '산업 환경의 변화', '컨소시엄 구성 배경']],
+  ['공급기업과의 매칭 배경', ['컨소시엄 구성 배경', '컨소시엄의 강점']],
+  ['핵심 목적, 목표, 해결과제를 기재', ['사업의 목적', '목적 및 필요성']],
+  ['기술개발 범위를 핵심기술', ['사업의 범위']],
+  ['수요기업의 사업 소개', ['주관기관(수요기업) 현황', '세솔의 현황']],
+  ['공급기업의 사업 소개', ['참여기관(공급기업) 현황', '천강']],
+  ['선정되어야 하는 필요성, 타당성', ['컨소시엄의 강점', '주관기관(수요기업) 강점']],
+  ['공급기업의 강점 기재', ['참여기관(공급기업) 강점', 'GrowFit']],
+  ['최종 목표를 기술', ['추진목표', '최종 목표']],
+  ['교육프로그램 목표, 교육 대상', ['교육과정 체계', '전사교육', '핵심역량교육']],
+  ['실행계획 수립 및 과제 검증', ['AX 실행계획 수립', '검증컨설팅', 'UNIST']],
+  ['사업 수행 주체와 참여조직', ['사업추진체계', '추진체계도', '추진조직']],
+  ['품질 관리계획 및 산출물 관리', ['품질관리 계획', '품질관리']],
+  ['산업 파급효과', ['기대효과', '산업 파급', '정량적 기대효과']],
+];
+
+/**
+ * span 내 텍스트를 교체 (첫 매칭만)
+ */
+function replaceSpanText(html: string, searchText: string, newText: string): { html: string; found: boolean } {
+  const escaped = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // &nbsp;를 유연하게 매칭
+  const flexPattern = escaped.replace(/\\ /g, '(?:&nbsp;|\\s| )');
   const regex = new RegExp(
-    `(<span class="hrt[^"]*"[^>]*>)([^<]*${escaped}[^<]*)(</span>)`,
-    'g'
+    `(<span class="hrt[^"]*"[^>]*>)([^<]*?${flexPattern}[^<]*?)(</span>)`,
+    ''
   );
-
-  let found = false;
-  let replaced = false;
-  const result = html.replace(regex, (match, open, _text, close) => {
-    found = true;
-    if (replaced) return match;
-    replaced = true;
-    return open + newText + close;
-  });
-
-  return { html: result, found };
-}
-
-/**
- * HWP HTML에서 ID로 요소를 찾아 텍스트 채우기
- * (케이비드 fill-by-mapping-v2.js의 fillElement 브라우저 버전)
- */
-function fillById(html: string, domId: string, value: string): { html: string; found: boolean } {
-  // id="kv-xxx" 또는 id="cell-xxx" 로 된 요소 찾기
-  const idRegex = new RegExp(`id="${domId}"[^>]*>`, 'g');
-  const match = idRegex.exec(html);
-
+  const match = html.match(regex);
   if (!match) return { html, found: false };
-
-  // 해당 요소 뒤에 span.hrt가 있으면 그 텍스트 교체
-  const afterId = html.slice(match.index);
-  const spanMatch = afterId.match(/<span class="hrt[^"]*"[^>]*>([^<]*)<\/span>/);
-
-  if (spanMatch) {
-    const fullMatch = spanMatch[0];
-    const newSpan = fullMatch.replace(spanMatch[1], value);
-    const newHtml = html.slice(0, match.index) + afterId.replace(fullMatch, newSpan);
-    return { html: newHtml, found: true };
-  }
-
-  // span이 없으면 빈 div에 텍스트 삽입
-  // height:..mm;width:..mm;"></div> 패턴 찾기
-  const emptyDivMatch = afterId.match(/(height:\d+\.?\d*mm;width:\d+\.?\d*mm;">)(<\/div>)/);
-  if (emptyDivMatch) {
-    const insertPoint = emptyDivMatch[0];
-    const withText = emptyDivMatch[1] + `<span class="hrt">${value}</span>` + emptyDivMatch[2];
-    const newHtml = html.slice(0, match.index) + afterId.replace(insertPoint, withText);
-    return { html: newHtml, found: true };
-  }
-
-  return { html, found: false };
-}
-
-/** 개행 제거 — HWP span은 한 줄이므로 개행 삽입하면 레이아웃이 깨짐 */
-function sanitizeValue(v: string): string {
-  return v.replace(/\r?\n/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const newHtml = html.replace(regex, match[1] + sanitize(newText) + match[3]);
+  return { html: newHtml, found: true };
 }
 
 /**
- * 메인 바인딩 함수: 템플릿 HTML + 필드 목록 → 채워진 HTML
+ * 메인 바인딩 함수
  */
 export function bindFields(templateHtml: string, fields: BindingField[]): BindingResult {
   let html = templateHtml;
@@ -208,77 +161,23 @@ export function bindFields(templateHtml: string, fields: BindingField[]): Bindin
     const f = { ...field };
 
     if (!f.value || f.value === '※ 추후보완') {
-      f.status = 'skipped';
-      skipped++;
-      updatedFields.push(f);
-      continue;
+      f.status = 'skipped'; skipped++;
+      updatedFields.push(f); continue;
     }
 
-    const safeValue = sanitizeValue(f.value);
+    const safeValue = sanitize(f.value);
     let found = false;
 
-    // 1차: domId로 시도
-    if (f.domId) {
-      const result = fillById(html, f.domId, safeValue);
-      if (result.found) {
-        html = result.html;
-        found = true;
-      }
+    // placeholder가 지정되어 있으면 직접 교체
+    if (f.placeholder) {
+      const r = replaceSpanText(html, f.placeholder, safeValue);
+      if (r.found) { html = r.html; found = true; }
     }
 
-    // 2차: keyword로 시도
-    if (!found && f.keyword) {
-      const result = replaceInSpan(html, f.keyword, safeValue);
-      if (result.found) {
-        html = result.html;
-        found = true;
-      }
-    }
-
-    // 3차: label을 keyword로 시도 (placeholder 텍스트 교체)
+    // label로 교체 시도
     if (!found) {
-      const result = replaceInSpan(html, f.label, safeValue);
-      if (result.found) {
-        html = result.html;
-        found = true;
-      }
-    }
-
-    // 4차: &nbsp; 무시 fuzzy 매칭 — HWP HTML의 "과 &nbsp;제 &nbsp;명" 같은 패턴
-    if (!found) {
-      const normalLabel = normalize(f.label);
-      // 모든 span.hrt에서 정규화된 텍스트로 검색
-      const spanRegex = /<span class="hrt[^"]*"[^>]*>([^<]*)<\/span>/g;
-      let spanMatch;
-      while ((spanMatch = spanRegex.exec(html)) !== null) {
-        const spanText = spanMatch[1];
-        const normalSpan = normalize(spanText);
-        if (normalSpan.includes(normalLabel) || normalLabel.includes(normalSpan)) {
-          // 이 span 다음에 오는 빈 span 또는 같은 셀의 값 영역에 값 삽입
-          const afterPos = spanMatch.index + spanMatch[0].length;
-          const afterHtml = html.slice(afterPos, afterPos + 500);
-
-          // 빈 hls div 찾기 (값이 들어갈 위치)
-          const emptyHls = afterHtml.match(/(height:\d+\.?\d*mm;width:\d+\.?\d*mm;">)(<\/div>)/);
-          if (emptyHls) {
-            const oldStr = emptyHls[0];
-            const newStr = emptyHls[1] + `<span class="hrt">${safeValue}</span>` + emptyHls[2];
-            html = html.slice(0, afterPos) + afterHtml.replace(oldStr, newStr) + html.slice(afterPos + 500);
-            found = true;
-            break;
-          }
-
-          // 빈 span 찾기
-          const emptySpan = afterHtml.match(/<span class="hrt[^"]*"[^>]*><\/span>/);
-          if (emptySpan) {
-            const oldStr = emptySpan[0];
-            const newStr = oldStr.replace('></span>', `>${safeValue}</span>`);
-            html = html.slice(0, afterPos) + afterHtml.replace(oldStr, newStr) + html.slice(afterPos + 500);
-            found = true;
-            break;
-          }
-        }
-      }
+      const r = replaceSpanText(html, f.label, safeValue);
+      if (r.found) { html = r.html; found = true; }
     }
 
     f.status = found ? 'bound' : 'error';
@@ -286,30 +185,95 @@ export function bindFields(templateHtml: string, fields: BindingField[]): Bindin
     updatedFields.push(f);
   }
 
-  return {
-    html,
-    fields: updatedFields,
-    stats: { total: fields.length, bound, skipped, error },
-  };
+  return { html, fields: updatedFields, stats: { total: fields.length, bound, skipped, error } };
 }
 
 /**
- * 간단 텍스트 교체 (simpleReplace 브라우저 버전)
+ * 자동 바인딩: 템플릿 placeholder 스캔 → 내용 매핑 → 필드 생성
  */
-export function simpleReplace(html: string, search: string, replace: string): string {
-  if (html.includes(search)) {
-    return html.replace(search, replace);
-  }
-  return html;
-}
-
-/**
- * 두 HTML을 자동 매핑하여 바인딩
- */
-export function autoBindHtmlToTemplate(
+export function autoGenerateFields(
   templateHtml: string,
   contentHtml: string
-): BindingResult {
-  const fields = extractFieldsFromContent(contentHtml);
-  return bindFields(templateHtml, fields);
+): BindingField[] {
+  const contentMap = extractContentMap(contentHtml);
+  const fields: BindingField[] = [];
+  let idx = 0;
+
+  // 1) PLACEHOLDER_MAP 기반 매핑
+  for (const [placeholder, contentKeys] of PLACEHOLDER_MAP) {
+    // 템플릿에 이 placeholder가 있는지 확인
+    const normPlaceholder = norm(placeholder);
+    // &nbsp; 유연 체크
+    const flexPattern = normPlaceholder.replace(/ /g, '(?:&nbsp;|\\s| )');
+    const checkRegex = new RegExp(flexPattern);
+    if (!checkRegex.test(templateHtml.replace(/&nbsp;/g, ' ')) && !templateHtml.includes(placeholder)) {
+      continue;
+    }
+
+    // 내용에서 값 찾기
+    let value = '';
+    for (const key of contentKeys) {
+      // 정확한 키 매칭
+      if (contentMap.has(key)) {
+        value = contentMap.get(key)!;
+        break;
+      }
+      // 부분 매칭
+      for (const [k, v] of contentMap) {
+        if (k.includes(key) || key.includes(k)) {
+          value = v;
+          break;
+        }
+      }
+      if (value) break;
+    }
+
+    if (value) {
+      fields.push({
+        id: `field-${idx++}`,
+        label: contentKeys[0],
+        value: value.slice(0, 500),
+        placeholder,
+        status: 'pending',
+      });
+    }
+  }
+
+  // 2) 내용 HTML의 table th-td 중 아직 매핑 안 된 것
+  const usedLabels = new Set(fields.map(f => f.label));
+  const doc = new DOMParser().parseFromString(contentHtml, 'text/html');
+  doc.querySelectorAll('tr').forEach((tr) => {
+    const ths = tr.querySelectorAll('th');
+    const tds = tr.querySelectorAll('td');
+    for (let i = 0; i < ths.length && i < tds.length; i++) {
+      const label = ths[i].textContent?.trim() || '';
+      const value = tds[i].textContent?.trim() || '';
+      if (label && value && !usedLabels.has(label) && value !== '※ 추후보완') {
+        fields.push({
+          id: `field-${idx++}`,
+          label,
+          value,
+          status: 'pending',
+        });
+        usedLabels.add(label);
+      }
+    }
+  });
+
+  return fields;
+}
+
+/**
+ * 추출 (하위호환)
+ */
+export function extractFieldsFromContent(contentHtml: string): BindingField[] {
+  const map = extractContentMap(contentHtml);
+  const fields: BindingField[] = [];
+  let idx = 0;
+  for (const [label, value] of map) {
+    if (value && value !== '※ 추후보완') {
+      fields.push({ id: `field-${idx++}`, label, value, status: 'pending' });
+    }
+  }
+  return fields;
 }
