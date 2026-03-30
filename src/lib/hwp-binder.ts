@@ -131,6 +131,11 @@ function fillById(html: string, domId: string, value: string): { html: string; f
   return { html, found: false };
 }
 
+/** 개행 제거 — HWP span은 한 줄이므로 개행 삽입하면 레이아웃이 깨짐 */
+function sanitizeValue(v: string): string {
+  return v.replace(/\r?\n/g, ' ').replace(/\s{2,}/g, ' ').trim();
+}
+
 /**
  * 메인 바인딩 함수: 템플릿 HTML + 필드 목록 → 채워진 HTML
  */
@@ -149,11 +154,12 @@ export function bindFields(templateHtml: string, fields: BindingField[]): Bindin
       continue;
     }
 
+    const safeValue = sanitizeValue(f.value);
     let found = false;
 
     // 1차: domId로 시도
     if (f.domId) {
-      const result = fillById(html, f.domId, f.value);
+      const result = fillById(html, f.domId, safeValue);
       if (result.found) {
         html = result.html;
         found = true;
@@ -162,7 +168,7 @@ export function bindFields(templateHtml: string, fields: BindingField[]): Bindin
 
     // 2차: keyword로 시도
     if (!found && f.keyword) {
-      const result = replaceInSpan(html, f.keyword, f.value);
+      const result = replaceInSpan(html, f.keyword, safeValue);
       if (result.found) {
         html = result.html;
         found = true;
@@ -171,7 +177,7 @@ export function bindFields(templateHtml: string, fields: BindingField[]): Bindin
 
     // 3차: label을 keyword로 시도 (placeholder 텍스트 교체)
     if (!found) {
-      const result = replaceInSpan(html, f.label, f.value);
+      const result = replaceInSpan(html, f.label, safeValue);
       if (result.found) {
         html = result.html;
         found = true;

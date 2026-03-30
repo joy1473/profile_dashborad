@@ -116,6 +116,8 @@ export function BindingTab() {
 
     // 따옴표 제거 유틸
     const stripQuotes = (s: string) => s.replace(/^["'""\u201C\u201D]+|["'""\u201C\u201D]+$/g, '').trim();
+    // 개행 → 공백 (HWP span은 한 줄이므로 개행 삽입하면 깨짐)
+    const sanitize = (s: string) => s.replace(/\r?\n/g, ' ').replace(/\s{2,}/g, ' ').trim();
 
     // 파싱: "A" -> "B", "A" → "B", "A" => "B"
     const arrowMatch = input.match(/(.+?)\s*(?:→|->|=>)\s*(.+)/);
@@ -124,7 +126,7 @@ export function BindingTab() {
     const match = arrowMatch || replaceMatch;
     if (match) {
       const search = stripQuotes(match[1]);
-      const replace = stripQuotes(match[2]);
+      const replace = sanitize(stripQuotes(match[2]));
 
       if (!search) {
         response = '검색 텍스트가 비어 있습니다.';
