@@ -1,279 +1,462 @@
 /**
- * HWP HTML 바인딩 엔진 v2
+ * HWP HTML 바인딩 엔진 v3 — 좌표 기반 공간 검색
  *
- * 접근: 케이비드 fill-v03.js 방식
- * 1. 템플릿(HWP HTML)에서 placeholder 텍스트를 스캔
- * 2. 내용 HTML에서 대응값 추출
- * 3. placeholder → 실제값 교체 (span.hrt 내부 텍스트만)
+ * 1. HWP HTML의 모든 span.hrt를 문서 순서대로 스캔
+ * 2. 채팅 입력을 파싱하여 context + key + value 추출
+ * 3. context 근처의 key를 찾고, 그 옆 빈칸에 value 삽입
  */
 
-export interface BindingField {
-  id: string;
-  label: string;
-  value: string;
-  placeholder?: string;     // 템플릿에서 찾은 원본 placeholder 텍스트
-  status: 'pending' | 'bound' | 'error' | 'skipped';
+// ── 타입 ──
+
+export interface SpanInfo {
+  text: string;       // 정규화된 텍스트 (&nbsp;→공백)
+  raw: string;        // 원본 텍스트
+  pos: number;        // HTML 내 span 시작 위치
+  end: number;        // span 끝 위치
+  full: string;       // 전체 <span>...</span> 문자열
+  isEmpty: boolean;   // 빈칸/placeholder 여부
+}
+
+export interface ChatCommand {
+  type: 'value' | 'table' | 'text' | 'replace';
+  context?: string;   // "참여기관", "주관기관" 등
+  key: string;        // "기관명", "대표자" 등
+  value: string;      // 채울 값
+  rows?: string[][];  // @표 일 때 행 데이터
 }
 
 export interface BindingResult {
   html: string;
-  fields: BindingField[];
-  stats: { total: number; bound: number; skipped: number; error: number };
+  log: string[];
+  stats: { success: number; fail: number };
 }
 
-/** &nbsp; → 공백, 연속공백 제거 */
+// ── 유틸 ──
+
 function norm(s: string): string {
+  return s.replace(/&nbsp;/g, ' ').replace(/\s+/g, '').trim();
+}
+
+function normSpace(s: string): string {
   return s.replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-/** 개행 → 공백 (HWP span은 단일 행) */
 function sanitize(s: string): string {
   return s.replace(/\r?\n/g, ' ').replace(/\s{2,}/g, ' ').trim();
 }
 
-/**
- * 템플릿 HTML에서 모든 span.hrt 텍스트를 추출
- */
-function extractAllSpans(html: string): { text: string; raw: string; pos: number }[] {
-  const regex = /class="hrt[^"]*"[^>]*>([^<]*)<\/span>/g;
-  const spans: { text: string; raw: string; pos: number }[] = [];
+const PLACEHOLDERS = ['❍ --', '⦁❍ --', '❍--', '기재', '기입', '기술'];
+
+function isPlaceholder(text: string): boolean {
+  const t = norm(text);
+  if (t.length === 0) return true;
+  if (t === '--' || t === '❍--' || t === '⦁❍--') return true;
+  return PLACEHOLDERS.some(p => norm(p) === t);
+}
+
+// ── 1. 스팬 추출 ──
+
+export function extractSpans(html: string): SpanInfo[] {
+  const regex = /<span class="hrt[^"]*"[^>]*>(.*?)<\/span>/g;
+  const spans: SpanInfo[] = [];
   let m;
   while ((m = regex.exec(html)) !== null) {
     const raw = m[1];
-    const text = norm(raw);
-    if (text.length > 0) {
-      spans.push({ text, raw, pos: m.index });
-    }
+    const text = normSpace(raw);
+    spans.push({
+      text,
+      raw,
+      pos: m.index,
+      end: m.index + m[0].length,
+      full: m[0],
+      isEmpty: isPlaceholder(text) || text.length === 0,
+    });
   }
   return spans;
 }
 
-/**
- * 내용 HTML에서 key-value 맵 추출 (th→td, label→value)
- */
-export function extractContentMap(contentHtml: string): Map<string, string> {
-  const doc = new DOMParser().parseFromString(contentHtml, 'text/html');
-  const map = new Map<string, string>();
+// ── 2. 빈 div 추출 (값이 들어갈 수 있는 빈 영역) ──
 
-  // 1) table th-td 쌍
-  doc.querySelectorAll('tr').forEach((tr) => {
-    const ths = tr.querySelectorAll('th');
-    const tds = tr.querySelectorAll('td');
-    for (let i = 0; i < ths.length && i < tds.length; i++) {
-      const label = ths[i].textContent?.trim() || '';
-      const value = tds[i].textContent?.trim() || '';
-      if (label && value) map.set(label, value);
-    }
-  });
-
-  // 2) h2/h3 다음 본문 텍스트
-  doc.querySelectorAll('h1.chapter, h2.section, h3.sub').forEach((h) => {
-    const label = h.textContent?.trim().replace(/^\d+\.\s*/, '') || '';
-    let content = '';
-    let sib = h.nextElementSibling;
-    while (sib && !['H1','H2','H3'].includes(sib.tagName)) {
-      content += (sib.textContent?.trim() || '') + ' ';
-      sib = sib.nextElementSibling;
-    }
-    if (label && content.trim().length > 10) {
-      map.set(label, content.trim().slice(0, 1000));
-    }
-  });
-
-  // 3) .lv1 strong → 뒤 텍스트
-  doc.querySelectorAll('.lv1').forEach((el) => {
-    const strong = el.querySelector('strong');
-    if (strong) {
-      const label = strong.textContent?.trim().replace(/^\(|\)$/g, '') || '';
-      const value = el.textContent?.trim().replace(/^[❍]\s*/, '') || '';
-      if (label && value.length > 10) map.set(label, value);
-    }
-  });
-
-  return map;
+interface EmptyCell {
+  pos: number;
+  end: number;
+  full: string;
+  parentPos: number;  // 부모 hce/hls의 위치
 }
 
-/**
- * HWP 양식의 placeholder → 내용 HTML의 키 매핑 테이블
- * key: placeholder 텍스트의 핵심 키워드
- * value: 내용 HTML에서 찾을 label 후보들
- */
-const PLACEHOLDER_MAP: [string, string[]][] = [
-  // 요약 섹션 placeholders
-  ['수요기업명 기재', ['기관명', '주관기관', '수요기업']],
-  ['공급기업명 기재', ['기관명', '참여기관', '공급기업']],
-  ['주요역할 기재', ['주요역할', '주요 역할']],
-  ['추진목표(교육목표) 기재', ['추진목표', '최종 목표', '사업의 목적']],
-  ['추진내용별 세부 목표를 간략히 기재', ['세부 목표', '세부목표']],
-  ['역량 및 전문성 기재', ['수행 역량', '사업수행능력', '수행능력']],
-  ['정량성과 및 정성적 성과목표 기술', ['성과목표', '성과 지표', '정량 지표']],
-  ['진단 결과 반영(안) 기재', ['역량진단', 'KSA', '역량진단·컨설팅']],
-  ['교육과정 운영방안 기재', ['교육과정 운영', '교육 체계', '교육과정 체계']],
-  ['AX 추진을 위한 기본(안)을 기재', ['AX 실행계획', '검증컨설팅', 'PoC']],
-  ['전략 검증(PoC) 방안을 기재', ['PoC 과제', 'PoC 범위', 'PoC 설계']],
-  ['성과조사 방안, 홍보활동 등 기재', ['사후관리', '성과 관리', '후속 확장']],
-  ['가치 창출 노력 정도 기재', ['사회적 가치', '대중소 상생']],
-  ['개인정보보호 관리방안 기재', ['개인정보보호', '데이터 보안', '비식별화']],
-
-  // 본문 섹션 placeholders
-  ['사업 참여 및 AX 추진 배경', ['사업 추진 배경', '산업 환경의 변화', '컨소시엄 구성 배경']],
-  ['공급기업과의 매칭 배경', ['컨소시엄 구성 배경', '컨소시엄의 강점']],
-  ['핵심 목적, 목표, 해결과제를 기재', ['사업의 목적', '목적 및 필요성']],
-  ['기술개발 범위를 핵심기술', ['사업의 범위']],
-  ['수요기업의 사업 소개', ['주관기관(수요기업) 현황', '세솔의 현황']],
-  ['공급기업의 사업 소개', ['참여기관(공급기업) 현황', '천강']],
-  ['선정되어야 하는 필요성, 타당성', ['컨소시엄의 강점', '주관기관(수요기업) 강점']],
-  ['공급기업의 강점 기재', ['참여기관(공급기업) 강점', 'GrowFit']],
-  ['최종 목표를 기술', ['추진목표', '최종 목표']],
-  ['교육프로그램 목표, 교육 대상', ['교육과정 체계', '전사교육', '핵심역량교육']],
-  ['실행계획 수립 및 과제 검증', ['AX 실행계획 수립', '검증컨설팅', 'UNIST']],
-  ['사업 수행 주체와 참여조직', ['사업추진체계', '추진체계도', '추진조직']],
-  ['품질 관리계획 및 산출물 관리', ['품질관리 계획', '품질관리']],
-  ['산업 파급효과', ['기대효과', '산업 파급', '정량적 기대효과']],
-];
-
-/**
- * span 내 텍스트를 교체 (첫 매칭만)
- */
-function replaceSpanText(html: string, searchText: string, newText: string): { html: string; found: boolean } {
-  const escaped = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // &nbsp;를 유연하게 매칭
-  const flexPattern = escaped.replace(/\\ /g, '(?:&nbsp;|\\s| )');
-  const regex = new RegExp(
-    `(<span class="hrt[^"]*"[^>]*>)([^<]*?${flexPattern}[^<]*?)(</span>)`,
-    ''
-  );
-  const match = html.match(regex);
-  if (!match) return { html, found: false };
-  const newHtml = html.replace(regex, match[1] + sanitize(newText) + match[3]);
-  return { html: newHtml, found: true };
+function findEmptyCells(html: string): EmptyCell[] {
+  // height:..mm;width:..mm;"></div> 패턴 (빈 div)
+  const regex = /(height:\d+\.?\d*mm;width:\d+\.?\d*mm;">)(<\/div>)/g;
+  const cells: EmptyCell[] = [];
+  let m;
+  while ((m = regex.exec(html)) !== null) {
+    cells.push({
+      pos: m.index,
+      end: m.index + m[0].length,
+      full: m[0],
+      parentPos: m.index,
+    });
+  }
+  return cells;
 }
 
-/**
- * 메인 바인딩 함수
- */
-export function bindFields(templateHtml: string, fields: BindingField[]): BindingResult {
-  let html = templateHtml;
-  const updatedFields: BindingField[] = [];
-  let bound = 0, skipped = 0, error = 0;
+// ── 3. 채팅 입력 파싱 ──
 
-  for (const field of fields) {
-    const f = { ...field };
+export function parseChatInput(input: string): ChatCommand[] {
+  const lines = input.split('\n').map(l => l.trim()).filter(l => l);
+  const commands: ChatCommand[] = [];
 
-    if (!f.value || f.value === '※ 추후보완') {
-      f.status = 'skipped'; skipped++;
-      updatedFields.push(f); continue;
+  // @표 명령
+  if (lines[0].startsWith('@표')) {
+    const location = lines[0].replace('@표', '').trim();
+    const rows: string[][] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cells = lines[i].split('|').map(c => c.trim()).filter(c => c);
+      if (cells.length >= 2) rows.push(cells);
     }
-
-    const safeValue = sanitize(f.value);
-    let found = false;
-
-    // placeholder가 지정되어 있으면 직접 교체
-    if (f.placeholder) {
-      const r = replaceSpanText(html, f.placeholder, safeValue);
-      if (r.found) { html = r.html; found = true; }
+    if (rows.length > 0) {
+      commands.push({ type: 'table', key: location, value: '', rows });
     }
-
-    // label로 교체 시도
-    if (!found) {
-      const r = replaceSpanText(html, f.label, safeValue);
-      if (r.found) { html = r.html; found = true; }
-    }
-
-    f.status = found ? 'bound' : 'error';
-    if (found) bound++; else error++;
-    updatedFields.push(f);
+    return commands;
   }
 
-  return { html, fields: updatedFields, stats: { total: fields.length, bound, skipped, error } };
+  // @서술 명령
+  if (lines[0].startsWith('@서술')) {
+    const location = lines[0].replace('@서술', '').trim();
+    const text = lines.slice(1).join('\n');
+    commands.push({ type: 'text', key: location, value: text });
+    return commands;
+  }
+
+  // A → B 교체
+  const arrowMatch = input.match(/^(.+?)\s*(?:→|->|=>)\s*(.+)$/);
+  if (arrowMatch && !input.includes('\n')) {
+    const search = arrowMatch[1].replace(/^["'"]+|["'"]+$/g, '').trim();
+    const replace = arrowMatch[2].replace(/^["'"]+|["'"]+$/g, '').trim();
+    commands.push({ type: 'replace', key: search, value: replace });
+    return commands;
+  }
+
+  // key: value (여러 줄 지원)
+  for (const line of lines) {
+    const kvMatch = line.match(/^(.+?)\s*[:：]\s*(.+)$/);
+    if (kvMatch) {
+      const fullKey = kvMatch[1].trim();
+      const value = kvMatch[2].trim();
+
+      // context + key 분리: "참여기관 기관명" → context="참여기관", key="기관명"
+      const parts = fullKey.split(/\s+/);
+      if (parts.length >= 2) {
+        commands.push({
+          type: 'value',
+          context: parts.slice(0, -1).join(' '),
+          key: parts[parts.length - 1],
+          value,
+        });
+      } else {
+        commands.push({ type: 'value', key: fullKey, value });
+      }
+    }
+  }
+
+  return commands;
 }
 
-/**
- * 자동 바인딩: 템플릿 placeholder 스캔 → 내용 매핑 → 필드 생성
- */
-export function autoGenerateFields(
-  templateHtml: string,
-  contentHtml: string
-): BindingField[] {
-  const contentMap = extractContentMap(contentHtml);
-  const fields: BindingField[] = [];
-  let idx = 0;
+// ── 4. 스팬 검색: context 근처의 key 찾기 ──
 
-  // 1) PLACEHOLDER_MAP 기반 매핑
-  for (const [placeholder, contentKeys] of PLACEHOLDER_MAP) {
-    // 템플릿에 이 placeholder가 있는지 확인
-    const normPlaceholder = norm(placeholder);
-    // &nbsp; 유연 체크
-    const flexPattern = normPlaceholder.replace(/ /g, '(?:&nbsp;|\\s| )');
-    const checkRegex = new RegExp(flexPattern);
-    if (!checkRegex.test(templateHtml.replace(/&nbsp;/g, ' ')) && !templateHtml.includes(placeholder)) {
-      continue;
-    }
+function findTargetSpan(
+  spans: SpanInfo[],
+  key: string,
+  context?: string
+): SpanInfo | null {
+  const normKey = norm(key);
 
-    // 내용에서 값 찾기
-    let value = '';
-    for (const key of contentKeys) {
-      // 정확한 키 매칭
-      if (contentMap.has(key)) {
-        value = contentMap.get(key)!;
-        break;
+  // key를 포함하는 모든 span 후보
+  const candidates = spans.filter(s => {
+    const ns = norm(s.text);
+    return ns.includes(normKey) || normKey.includes(ns);
+  });
+
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1 || !context) return candidates[0];
+
+  // context가 있으면, context span 바로 뒤에 있는 key를 선택
+  const normCtx = norm(context);
+  const contextSpans = spans.filter(s => norm(s.text).includes(normCtx));
+
+  if (contextSpans.length === 0) return candidates[0];
+
+  // 각 candidate에 대해 가장 가까운 context span과의 거리 계산
+  let best: SpanInfo | null = null;
+  let bestDist = Infinity;
+
+  for (const cand of candidates) {
+    for (const ctx of contextSpans) {
+      // context보다 뒤에 있는 key만 (같은 섹션)
+      const dist = cand.pos - ctx.pos;
+      if (dist > 0 && dist < bestDist) {
+        bestDist = dist;
+        best = cand;
       }
-      // 부분 매칭
-      for (const [k, v] of contentMap) {
-        if (k.includes(key) || key.includes(k)) {
-          value = v;
+    }
+  }
+
+  return best || candidates[0];
+}
+
+// ── 5. 값 셀 찾기: label span 다음의 빈 영역 ──
+
+function findValuePosition(
+  html: string,
+  spans: SpanInfo[],
+  labelSpan: SpanInfo
+): { start: number; end: number; type: 'span' | 'empty' } | null {
+  // labelSpan 이후의 span들을 순회
+  const afterSpans = spans.filter(s => s.pos > labelSpan.pos);
+
+  // 1) 바로 다음 span이 비어있거나 placeholder면 → 그 span 교체
+  for (const next of afterSpans.slice(0, 5)) {
+    if (next.isEmpty) {
+      return { start: next.pos, end: next.end, type: 'span' };
+    }
+    // 값이 이미 들어있는 span (이전 바인딩 결과) → 교체 대상
+    if (next.text.length > 0 && !next.text.includes('작성') && !next.text.includes('기재')) {
+      // 이 span이 다른 라벨이면 스킵
+      const normText = norm(next.text);
+      const labelKeywords = ['성명', '부서', '전화', '번호', '주소', '핸드폰', '이메일',
+        '기관명', '대표자', '설립', '직원', '사업', '홈페이지', '매출', '직위'];
+      if (labelKeywords.some(k => normText.includes(k))) continue;
+
+      // 값 span으로 간주
+      return { start: next.pos, end: next.end, type: 'span' };
+    }
+  }
+
+  // 2) labelSpan 뒤의 빈 div 찾기
+  const afterHtml = html.slice(labelSpan.end, labelSpan.end + 1000);
+  const emptyDiv = afterHtml.match(/(height:\d+\.?\d*mm;width:\d+\.?\d*mm;">)(<\/div>)/);
+  if (emptyDiv) {
+    const absPos = labelSpan.end + (emptyDiv.index || 0);
+    return {
+      start: absPos,
+      end: absPos + emptyDiv[0].length,
+      type: 'empty',
+    };
+  }
+
+  return null;
+}
+
+// ── 6. 명령 실행 ──
+
+export function executeCommands(html: string, commands: ChatCommand[]): BindingResult {
+  let result = html;
+  const log: string[] = [];
+  let success = 0, fail = 0;
+
+  for (const cmd of commands) {
+    switch (cmd.type) {
+      case 'value': {
+        const spans = extractSpans(result);
+        const target = findTargetSpan(spans, cmd.key, cmd.context);
+
+        if (!target) {
+          log.push(`❌ "${cmd.context ? cmd.context + ' ' : ''}${cmd.key}" 라벨을 찾을 수 없습니다`);
+          fail++;
           break;
         }
-      }
-      if (value) break;
-    }
 
-    if (value) {
-      fields.push({
-        id: `field-${idx++}`,
-        label: contentKeys[0],
-        value: value.slice(0, 500),
-        placeholder,
-        status: 'pending',
-      });
+        const valuePos = findValuePosition(result, spans, target);
+        if (!valuePos) {
+          log.push(`❌ "${cmd.key}" 라벨은 찾았으나 값을 넣을 빈칸이 없습니다`);
+          fail++;
+          break;
+        }
+
+        const safeValue = sanitize(cmd.value);
+
+        if (valuePos.type === 'span') {
+          // 기존 span의 텍스트만 교체
+          const oldSpan = result.slice(valuePos.start, valuePos.end);
+          const newSpan = oldSpan.replace(/>([^<]*)<\/span>$/, `>${safeValue}</span>`);
+          result = result.slice(0, valuePos.start) + newSpan + result.slice(valuePos.end);
+        } else {
+          // 빈 div에 span 삽입
+          const oldStr = result.slice(valuePos.start, valuePos.end);
+          const insertPoint = oldStr.indexOf('">') + 2;
+          const newStr = oldStr.slice(0, insertPoint) +
+            `<span class="hrt">${safeValue}</span>` +
+            oldStr.slice(insertPoint);
+          result = result.slice(0, valuePos.start) + newStr + result.slice(valuePos.end);
+        }
+
+        const ctx = cmd.context ? `${cmd.context} ` : '';
+        log.push(`✅ ${ctx}${cmd.key} → "${safeValue.slice(0, 40)}${safeValue.length > 40 ? '...' : ''}"`);
+        success++;
+        break;
+      }
+
+      case 'replace': {
+        // &nbsp; 유연 매칭
+        const searchNorm = cmd.key;
+        const flexPattern = searchNorm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '(?:&nbsp;|\\s| )');
+        const regex = new RegExp(flexPattern);
+
+        if (regex.test(result)) {
+          result = result.replace(regex, cmd.value);
+          log.push(`✅ 교체: "${cmd.key.slice(0, 30)}..." → "${cmd.value.slice(0, 30)}..."`);
+          success++;
+        } else {
+          // span 내부에서 검색
+          const spanRegex = /<span[^>]*>([^<]*)<\/span>/g;
+          let found = false;
+          result = result.replace(spanRegex, (match, text) => {
+            const plain = text.replace(/&nbsp;/g, ' ');
+            if (plain.includes(cmd.key) && !found) {
+              found = true;
+              return match.replace(text, text.replace(/&nbsp;/g, ' ').replace(cmd.key, cmd.value));
+            }
+            return match;
+          });
+          if (found) {
+            log.push(`✅ span 내 교체: "${cmd.key.slice(0, 30)}..."`);
+            success++;
+          } else {
+            log.push(`❌ "${cmd.key.slice(0, 30)}..." 텍스트를 찾을 수 없습니다`);
+            fail++;
+          }
+        }
+        break;
+      }
+
+      case 'table': {
+        // @표: 위치 찾기 → ❍ -- 교체
+        const spans = extractSpans(result);
+        const normKey = norm(cmd.key);
+
+        // 위치 키워드 근처의 ❍ -- 찾기
+        let targetEmpty: SpanInfo | null = null;
+
+        if (normKey) {
+          const locationSpan = spans.find(s => norm(s.text).includes(normKey));
+          if (locationSpan) {
+            const afterSpans = spans.filter(s => s.pos > locationSpan.pos && s.isEmpty);
+            targetEmpty = afterSpans[0] || null;
+          }
+        }
+
+        if (!targetEmpty) {
+          // 첫 번째 ❍ -- 찾기
+          targetEmpty = spans.find(s => norm(s.text).startsWith('❍')) || null;
+        }
+
+        if (!targetEmpty || !cmd.rows) {
+          log.push(`❌ "@표 ${cmd.key}" 삽입 위치를 찾을 수 없습니다`);
+          fail++;
+          break;
+        }
+
+        // 표 HTML 생성
+        const tableHtml = cmd.rows.map(row => {
+          if (row.length === 2) {
+            return `<strong>${row[0]}</strong>: ${row[1]}`;
+          } else if (row.length === 4) {
+            return `<strong>${row[0]}</strong>: ${row[1]}  |  <strong>${row[2]}</strong>: ${row[3]}`;
+          }
+          return row.join(' | ');
+        }).join('  ');
+
+        const oldSpan = targetEmpty.full;
+        const newSpan = oldSpan.replace(targetEmpty.raw, tableHtml);
+        result = result.replace(oldSpan, newSpan);
+
+        log.push(`✅ @표 "${cmd.key}" → ${cmd.rows.length}행 삽입`);
+        success++;
+        break;
+      }
+
+      case 'text': {
+        // @서술: 위치 찾기 → ❍ -- 교체
+        const spans = extractSpans(result);
+        const normKey = norm(cmd.key);
+
+        let targetEmpty: SpanInfo | null = null;
+        if (normKey) {
+          const locationSpan = spans.find(s => norm(s.text).includes(normKey));
+          if (locationSpan) {
+            const afterSpans = spans.filter(s => s.pos > locationSpan.pos && s.isEmpty);
+            targetEmpty = afterSpans[0] || null;
+          }
+        }
+
+        if (!targetEmpty) {
+          log.push(`❌ "@서술 ${cmd.key}" 삽입 위치를 찾을 수 없습니다`);
+          fail++;
+          break;
+        }
+
+        const safeText = sanitize(cmd.value);
+        const oldSpan = targetEmpty.full;
+        const newSpan = oldSpan.replace(targetEmpty.raw, safeText);
+        result = result.replace(oldSpan, newSpan);
+
+        log.push(`✅ @서술 "${cmd.key}" → ${safeText.length}자 삽입`);
+        success++;
+        break;
+      }
     }
   }
 
-  // 2) 내용 HTML의 table th-td 중 아직 매핑 안 된 것
-  const usedLabels = new Set(fields.map(f => f.label));
-  const doc = new DOMParser().parseFromString(contentHtml, 'text/html');
-  doc.querySelectorAll('tr').forEach((tr) => {
-    const ths = tr.querySelectorAll('th');
-    const tds = tr.querySelectorAll('td');
-    for (let i = 0; i < ths.length && i < tds.length; i++) {
-      const label = ths[i].textContent?.trim() || '';
-      const value = tds[i].textContent?.trim() || '';
-      if (label && value && !usedLabels.has(label) && value !== '※ 추후보완') {
-        fields.push({
-          id: `field-${idx++}`,
-          label,
-          value,
-          status: 'pending',
-        });
-        usedLabels.add(label);
-      }
-    }
-  });
-
-  return fields;
+  return { html: result, log, stats: { success, fail } };
 }
 
-/**
- * 추출 (하위호환)
- */
-export function extractFieldsFromContent(contentHtml: string): BindingField[] {
-  const map = extractContentMap(contentHtml);
-  const fields: BindingField[] = [];
-  let idx = 0;
-  for (const [label, value] of map) {
-    if (value && value !== '※ 추후보완') {
-      fields.push({ id: `field-${idx++}`, label, value, status: 'pending' });
-    }
-  }
-  return fields;
+// ── 7. 문서 요약 (업로드 시) ──
+
+export function summarizeTemplate(html: string): string {
+  const spans = extractSpans(html);
+  const pages = html.split(/class="hpa"/).length - 1;
+  const emptyCount = spans.filter(s => s.isEmpty).length;
+  const textSpans = spans.filter(s => !s.isEmpty && s.text.length > 2);
+
+  // 주요 라벨 추출
+  const labels = textSpans
+    .filter(s => {
+      const t = norm(s.text);
+      return t.length < 20 && !t.includes('--') && !t.includes('***');
+    })
+    .map(s => s.text)
+    .slice(0, 50);
+
+  // placeholder 목록
+  const placeholders = textSpans
+    .filter(s => s.text.includes('기재') || s.text.includes('기술') || s.text.includes('기입'))
+    .map(s => s.text.slice(0, 50));
+
+  return [
+    `📄 문서 분석 완료`,
+    `• ${pages}페이지, ${spans.length}개 텍스트 영역`,
+    `• ${emptyCount}개 빈칸/placeholder 발견`,
+    `• ${placeholders.length}개 "기재" 항목`,
+    ``,
+    `💡 사용법:`,
+    `• 값 대입: "과제명 : ㅇㅇㅇ"`,
+    `• 컨텍스트: "참여기관 기관명 : (주)천강"`,
+    `• 여러 줄: 줄바꿈으로 구분`,
+    `• 교체: "A → B"`,
+    `• 표 삽입: "@표 위치명" + key|value`,
+    `• 서술: "@서술 위치명" + 텍스트`,
+  ].join('\n');
 }
+
+// 하위호환
+export interface BindingField {
+  id: string; label: string; value: string; status: string;
+  placeholder?: string; keyword?: string; domId?: string;
+  position?: { page: number; context: string };
+}
+
+export function extractFieldsFromContent(contentHtml: string): BindingField[] { return []; }
+export function bindFields(templateHtml: string, fields: BindingField[]): { html: string; fields: BindingField[]; stats: { total: number; bound: number; skipped: number; error: number } } {
+  return { html: templateHtml, fields, stats: { total: 0, bound: 0, skipped: 0, error: 0 } };
+}
+export function autoGenerateFields(): BindingField[] { return []; }
