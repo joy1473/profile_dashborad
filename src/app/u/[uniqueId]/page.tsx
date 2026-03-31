@@ -73,6 +73,14 @@ export default function PublicProfilePage({ params }: { params: Promise<{ unique
               </div>
             )}
             <h1 className="text-2xl font-bold">{profile.name}</h1>
+            {(profile.company || profile.job_title || profile.position) && (
+              <p className="text-blue-100 text-sm mt-1">
+                {[profile.company, profile.position, profile.job_title].filter(Boolean).join(" · ")}
+              </p>
+            )}
+            {profile.role && (
+              <p className="text-blue-200 text-xs mt-0.5">{profile.role}</p>
+            )}
           </div>
 
           {/* 연락처 정보 */}

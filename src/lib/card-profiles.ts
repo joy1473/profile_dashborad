@@ -8,9 +8,15 @@ export function generateVCard(profile: CardProfile): string {
     "BEGIN:VCARD",
     "VERSION:3.0",
     `FN:${profile.name}`,
-    `EMAIL:${profile.email}`,
-    `TEL;TYPE=CELL:${profile.phone}`,
   ];
+  if (profile.company) lines.push(`ORG:${profile.company}`);
+  if (profile.job_title || profile.position) {
+    const title = [profile.job_title, profile.position].filter(Boolean).join(" / ");
+    lines.push(`TITLE:${title}`);
+  }
+  if (profile.role) lines.push(`ROLE:${profile.role}`);
+  lines.push(`EMAIL:${profile.email}`);
+  lines.push(`TEL;TYPE=CELL:${profile.phone}`);
   for (const url of profile.websites ?? []) {
     if (url) lines.push(`URL:${url}`);
   }
@@ -32,6 +38,10 @@ function mapRow(row: Record<string, unknown>): CardProfile {
     user_id: (row.user_id as string) ?? "",
     unique_id: row.unique_id as string,
     name: row.name as string,
+    company: (row.company as string) ?? "",
+    job_title: (row.job_title as string) ?? "",
+    position: (row.position as string) ?? "",
+    role: (row.role as string) ?? "",
     email: row.email as string,
     phone: row.phone as string,
     websites: (row.websites as string[]) ?? [],
@@ -75,6 +85,10 @@ export async function createCardProfile(
       user_id: input.user_id || null,
       unique_id: input.unique_id,
       name: input.name,
+      company: input.company || "",
+      job_title: input.job_title || "",
+      position: input.position || "",
+      role: input.role || "",
       email: input.email,
       phone: input.phone,
       websites: input.websites,

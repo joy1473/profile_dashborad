@@ -21,6 +21,10 @@ export default function QrCardsPage() {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [formName, setFormName] = useState("");
+  const [formCompany, setFormCompany] = useState("");
+  const [formJobTitle, setFormJobTitle] = useState("");
+  const [formPosition, setFormPosition] = useState("");
+  const [formRole, setFormRole] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formPhone, setFormPhone] = useState("");
   const [formWebsites, setFormWebsites] = useState<string[]>([""]);
@@ -91,6 +95,10 @@ export default function QrCardsPage() {
         user_id: user?.id ?? "",
         unique_id: generateUniqueId(formName),
         name: formName,
+        company: formCompany,
+        job_title: formJobTitle,
+        position: formPosition,
+        role: formRole,
         email: formEmail,
         phone: formPhone,
         websites,
@@ -107,6 +115,10 @@ export default function QrCardsPage() {
 
   function resetForm() {
     setFormName("");
+    setFormCompany("");
+    setFormJobTitle("");
+    setFormPosition("");
+    setFormRole("");
     setFormEmail("");
     setFormPhone("");
     setFormWebsites([""]);
@@ -226,6 +238,33 @@ export default function QrCardsPage() {
             />
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+            <input
+              placeholder="회사명"
+              value={formCompany}
+              onChange={(e) => setFormCompany(e.target.value)}
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+            <input
+              placeholder="직급 (예: 부장, 과장)"
+              value={formJobTitle}
+              onChange={(e) => setFormJobTitle(e.target.value)}
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+            <input
+              placeholder="직책 (예: 팀장, 실장)"
+              value={formPosition}
+              onChange={(e) => setFormPosition(e.target.value)}
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+            <input
+              placeholder="역할/부서 (예: 개발팀)"
+              value={formRole}
+              onChange={(e) => setFormRole(e.target.value)}
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+          </div>
+
           {/* 홈페이지 N개 입력 */}
           <div className="mt-4">
             <div className="flex items-center gap-2 mb-2">
@@ -309,6 +348,11 @@ export default function QrCardsPage() {
                   )}
                   <div>
                     <p className="font-medium text-zinc-900 dark:text-zinc-50">{profile.name}</p>
+                    {(profile.company || profile.job_title || profile.position || profile.role) && (
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                        {[profile.company, profile.job_title, profile.position, profile.role].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
                     <p className="text-xs text-zinc-500">{profile.email} · {profile.phone}</p>
                     {profile.websites?.length > 0 && (
                       <p className="text-xs text-blue-500 flex items-center gap-1 mt-0.5">
