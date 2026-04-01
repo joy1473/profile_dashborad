@@ -95,7 +95,16 @@ export function KvPairPanel() {
 
   // 적용 + 다운로드
   const applyAndDownload = () => {
-    if (!documentModel || documentModel.fileType !== 'html') { alert('HTML 문서가 필요합니다.'); return; }
+    if (!documentModel) { alert('문서가 없습니다.'); return; }
+
+    // PDF → 매핑 엑셀만 다운로드 (HTML 적용 불가)
+    if (documentModel.fileType === 'pdf' || !documentModel.fileType) {
+      exportToExcel();
+      alert('PDF 문서는 직접 수정이 불가합니다.\n매핑 엑셀이 다운로드되었습니다.\n→ "입찰작성" 탭에서 매핑 결과 HTML 리포트를 생성하세요.');
+      return;
+    }
+
+    if (documentModel.fileType !== 'html') { alert('HTML 문서가 필요합니다.'); return; }
     const iframe = document.querySelector('iframe[title="문서 미리보기"]') as HTMLIFrameElement;
     const iframeDoc = iframe?.contentDocument;
     if (!iframeDoc) { alert('문서를 찾을 수 없습니다.'); return; }

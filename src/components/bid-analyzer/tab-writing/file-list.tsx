@@ -133,6 +133,15 @@ export function WritingTab() {
         const scriptBlob = new Blob([scriptContent], { type: 'text/plain; charset=utf-8' });
         setConvertScriptUrl(URL.createObjectURL(scriptBlob));
 
+      } else if (file.type === 'pdf') {
+        // PDF → 매핑 결과 HTML 리포트 생성 (PDF 직접 수정 불가)
+        const reportHtml = generatePdfMappingReport(file.name, mappingData, file.model?.renderedHtml);
+        const blob = new Blob([reportHtml], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        setResultUrl(url);
+        setResultName(`${baseName}_매핑결과_${ts}.html`);
+        setIsHwpOutput(false);
+
       } else {
         // 기타 포맷: 원본 그대로
         const url = URL.createObjectURL(file.blob);
@@ -211,6 +220,18 @@ export function WritingTab() {
       {/* Step 3: 생성 */}
       <div className="bg-white rounded-lg border p-4">
         <h3 className="text-sm font-bold text-gray-700 mb-3">3. 파일 생성</h3>
+
+        {/* PDF 파일 선택 시 안내 */}
+        {selectedFileForWriting && uploadedFiles.find(f => f.id === selectedFileForWriting)?.type === 'pdf' && (
+          <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-3 text-xs text-blue-800">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold">PDF 파일 → 매핑 결과 HTML 리포트로 생성됩니다</p>
+              <p className="mt-1">PDF는 직접 수정이 불가하여, 추출된 key-value 매핑 결과를 HTML 리포트로 다운로드합니다.</p>
+              <p>원본 PDF 이미지와 매핑 데이터가 함께 포함됩니다.</p>
+            </div>
+          </div>
+        )}
 
         {/* HWP 파일 선택 시 안내 */}
         {selectedFileForWriting && uploadedFiles.find(f => f.id === selectedFileForWriting)?.type === 'hwp' && (
@@ -300,6 +321,91 @@ export function WritingTab() {
       </div>
     </div>
   );
+}
+
+/** PDF 매핑 결과 HTML 리포트 생성 */
+function generatePdfMappingReport(
+  fileName: string,
+  mappingData: MappingRow[],
+  renderedHtml?: string,
+): string {
+  const ts = new Date().toLocaleString('ko-KR');
+  const rows = mappingData.map((row, i) => {
+    const key = String(row['Key'] || '').trim();
+    const value = String(row['Value'] || '').trim();
+    let pageInfo = '';
+    try {
+      if (row['ValuePosition']) {
+        const pos = JSON.parse(String(row['ValuePosition']));
+        if (pos.pageNumber) pageInfo = `Page ${pos.pageNumber}`;
+      }
+    } catch { /* */ }
+    const notes = (row as Record<string, unknown>)['notes'] || '';
+    return `<tr>
+      <td style="text-align:center;color:#999">${i + 1}</td>
+      <td style="font-weight:bold">${escHtml(key)}</td>
+      <td style="color:#0066cc">${escHtml(value) || '<span style="color:#ccc">(빈값)</span>'}</td>
+      <td style="text-align:center;font-size:11px;color:#666">${pageInfo}</td>
+      <td style="font-size:11px;color:#888">${escHtml(String(notes))}</td>
+    </tr>`;
+  }).join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>${escHtml(fileName)} — 매핑 결과</title>
+<style>
+  body { font-family: '맑은 고딕', sans-serif; max-width: 900px; margin: 20px auto; padding: 20px; color: #333; }
+  h1 { font-size: 18px; border-bottom: 2px solid #1a1a2e; padding-bottom: 8px; }
+  .meta { font-size: 12px; color: #888; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+  th { background: #1a1a2e; color: #fff; padding: 8px 12px; font-size: 12px; text-align: left; }
+  td { padding: 6px 12px; border-bottom: 1px solid #eee; font-size: 12px; }
+  tr:hover { background: #f8f9ff; }
+  .section { margin-top: 30px; padding: 16px; background: #f5f5f5; border-radius: 8px; }
+  .section h2 { font-size: 14px; margin: 0 0 12px 0; }
+  .original { margin-top: 20px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+  .original-header { background: #eee; padding: 8px 12px; font-size: 12px; font-weight: bold; }
+  .original-content { padding: 16px; max-height: 600px; overflow-y: auto; }
+  .original-content img { max-width: 100%; }
+  .stats { display: flex; gap: 20px; margin-bottom: 20px; }
+  .stat { padding: 12px 20px; background: #fff; border: 1px solid #ddd; border-radius: 8px; text-align: center; }
+  .stat-value { font-size: 24px; font-weight: bold; color: #1a1a2e; }
+  .stat-label { font-size: 11px; color: #888; }
+</style>
+</head>
+<body>
+<h1>📋 PDF 매핑 결과 리포트</h1>
+<div class="meta">원본: ${escHtml(fileName)} | 생성: ${ts} | 총 ${mappingData.length}개 항목</div>
+
+<div class="stats">
+  <div class="stat"><div class="stat-value">${mappingData.length}</div><div class="stat-label">전체 항목</div></div>
+  <div class="stat"><div class="stat-value">${mappingData.filter(r => String(r['Value'] || '').trim()).length}</div><div class="stat-label">값 있음</div></div>
+  <div class="stat"><div class="stat-value">${mappingData.filter(r => !String(r['Value'] || '').trim()).length}</div><div class="stat-label">빈값</div></div>
+</div>
+
+<table>
+  <thead>
+    <tr><th style="width:40px">No</th><th>항목 (Key)</th><th>값 (Value)</th><th style="width:70px">위치</th><th>비고</th></tr>
+  </thead>
+  <tbody>
+    ${rows}
+  </tbody>
+</table>
+
+${renderedHtml ? `
+<div class="original">
+  <div class="original-header">📄 원본 PDF 내용</div>
+  <div class="original-content">${renderedHtml}</div>
+</div>
+` : ''}
+
+</body></html>`;
+}
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /** 로컬 HWPX→HWP 변환 Python 스크립트 생성 */
