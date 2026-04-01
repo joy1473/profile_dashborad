@@ -135,7 +135,8 @@ export function FileUpload() {
       }
     } catch (err) {
       console.error('문서 파싱 오류:', err);
-      alert('문서 파싱 중 오류가 발생했습니다.');
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`문서 파싱 오류: ${msg}`);
     } finally {
       setParsingDocument(false);
     }

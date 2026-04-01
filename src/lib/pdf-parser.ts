@@ -8,13 +8,14 @@
 import type { DocumentModel, DocumentElement, DocumentPosition } from "@/types/bid-analyzer";
 
 // pdfjs-dist dynamic import (클라이언트 사이드에서만)
-let pdfjsLib: typeof import("pdfjs-dist") | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let pdfjsLib: any = null;
 
 async function getPdfjs() {
   if (pdfjsLib) return pdfjsLib;
   pdfjsLib = await import("pdfjs-dist");
-  // worker 설정
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+  // worker: public 폴더에서 로드 (CDN CORS 문제 회피)
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
   return pdfjsLib;
 }
 
@@ -47,7 +48,8 @@ export async function extractPdfPages(
     // 텍스트 추출
     const textContent = await page.getTextContent();
     const text = textContent.items
-      .map((item) => ("str" in item ? item.str : ""))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((item: any) => (item.str ?? ""))
       .join(" ")
       .trim();
 
@@ -79,7 +81,16 @@ export async function extractPdfPages(
  * PDF → DocumentModel (기존 파이프라인 호환)
  */
 export async function parsePdf(file: File, fileName: string): Promise<DocumentModel> {
-  const pages = await extractPdfPages(file);
+  let pages: PdfPageResult[];
+  try {
+    pages = await extractPdfPages(file);
+  } catch (err) {
+    console.error("PDF 추출 실패:", err);
+    throw new Error(`PDF 파싱 실패: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (pages.length === 0) {
+    throw new Error("PDF에서 페이지를 추출할 수 없습니다.");
+  }
 
   const positionMap = new Map<string, DocumentPosition>();
   const sections: DocumentElement[] = [];
