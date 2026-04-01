@@ -33,7 +33,7 @@ export interface CourseRun {
   hours: number;
   revenue: number;           // 수강료 (천원)
   govSupport: number;        // 정부지원금 (천원)
-  status: "예정" | "진행중" | "완료" | "취소";
+  status: "계약" | "개설" | "예정" | "진행중" | "수료" | "입금대기" | "입금완료" | "정산완료" | "완료" | "취소";
   leadId?: string;
   instructorId?: string;
 }

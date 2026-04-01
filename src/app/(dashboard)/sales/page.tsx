@@ -14,6 +14,9 @@ import type { SalesLead, CourseRun, PipelineSummary, LeadStatus, CourseType } fr
 import type { UserRoleAssignment } from "@/types/user-roles";
 import { getActiveRolesForMonth } from "@/types/user-roles";
 import { getRoleAssignments, seedRoleAssignments } from "@/lib/user-roles-data";
+import type { CourseStaffAssignment, StaffRole, PaymentType } from "@/types/course-staff";
+import { calculateTax, calculateGrossAmount, getDisplayName as getStaffName } from "@/types/course-staff";
+import { getAllStaff, createStaff, updateStaff, deleteStaff } from "@/lib/course-staff-data";
 import {
   getLeads, createLead, updateLead, deleteLead,
   getCourses, createCourse,
@@ -51,13 +54,19 @@ export default function SalesPage() {
   const [editingLead, setEditingLead] = useState<SalesLead | null>(null);
   const [showCourseModal, setShowCourseModal] = useState(false);
   const [roleAssignments, setRoleAssignments] = useState<UserRoleAssignment[]>([]);
+  const [staffAssignments, setStaffAssignments] = useState<CourseStaffAssignment[]>([]);
+  const [showStaffModal, setShowStaffModal] = useState(false);
+  const [staffCourseId, setStaffCourseId] = useState("");
+  const [staffCourseRevenue, setStaffCourseRevenue] = useState(0);
+  const [expandedCourseId, setExpandedCourseId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const [l, c, p, r] = await Promise.all([getLeads(), getCourses(), getPipelineSummary(), getRoleAssignments()]);
+    const [l, c, p, r, s] = await Promise.all([getLeads(), getCourses(), getPipelineSummary(), getRoleAssignments(), getAllStaff()]);
     setLeads(l);
     setCourses(c);
     setPipeline(p);
     setRoleAssignments(r);
+    setStaffAssignments(s);
   }, []);
 
   useEffect(() => {
@@ -209,35 +218,117 @@ export default function SalesPage() {
         </div>
       )}
 
-      {/* ── 교육 과정 탭 ── */}
+      {/* ── 교육 과정 탭 (인력 배당 포함) ── */}
       {tab === "courses" && (
         <div className="space-y-3">
-          {courses.map((c) => (
-            <div key={c.id} className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200/60 dark:bg-zinc-900 dark:ring-zinc-700/60">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{c.title}</h3>
-                  <p className="text-xs text-zinc-500">{c.startDate} ~ {c.endDate} · {c.students}명 · {c.hours}시간</p>
-                </div>
-                <div className="text-right">
-                  <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-semibold",
-                    c.status === "완료" ? "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400" :
-                    c.status === "진행중" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" :
-                    c.status === "예정" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" :
-                    "bg-red-100 text-red-700"
-                  )}>{c.status}</span>
-                  <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-zinc-100">{c.revenue.toLocaleString()}천원</p>
-                  <p className="text-[10px] text-zinc-400">정부지원 {c.govSupport.toLocaleString()}천원</p>
-                </div>
+          {courses.map((c) => {
+            const staff = staffAssignments.filter((s) => s.courseId === c.id);
+            const isExpanded = expandedCourseId === c.id;
+            const totalOrgCost = staff.reduce((s, st) => s + st.orgCost, 0);
+            const margin = c.revenue - totalOrgCost;
+            return (
+              <div key={c.id} className="rounded-xl bg-white shadow-sm ring-1 ring-zinc-200/60 dark:bg-zinc-900 dark:ring-zinc-700/60">
+                <button onClick={() => setExpandedCourseId(isExpanded ? null : c.id)} className="flex w-full items-center justify-between p-4">
+                  <div className="text-left">
+                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{c.title}</h3>
+                    <p className="text-xs text-zinc-500">{c.startDate} ~ {c.endDate} · {c.students}명 · {c.hours}시간</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-semibold",
+                        c.status === "완료" || c.status === "입금완료" || c.status === "정산완료" ? "bg-emerald-100 text-emerald-700" :
+                        c.status === "진행중" ? "bg-blue-100 text-blue-700" :
+                        "bg-zinc-100 text-zinc-600"
+                      )}>{c.status}</span>
+                      <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-zinc-100">{c.revenue.toLocaleString()}천원</p>
+                    </div>
+                    <span className="text-xs text-zinc-400">{staff.length}명 배당</span>
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <div className="border-t border-zinc-100 px-4 pb-4 dark:border-zinc-800">
+                    <div className="mt-3 flex justify-between items-center mb-2">
+                      <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">인력 배당</span>
+                      <button onClick={() => { setStaffCourseId(c.id); setStaffCourseRevenue(c.revenue); setShowStaffModal(true); }}
+                        className="flex items-center gap-1 rounded bg-indigo-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-indigo-700">
+                        <Plus size={10} /> 인력 배당
+                      </button>
+                    </div>
+                    {staff.length === 0 ? (
+                      <p className="text-xs text-zinc-400 py-2">배당된 인력이 없습니다.</p>
+                    ) : (
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="text-zinc-500 border-b">
+                            <th className="pb-1 text-left font-medium">담당자</th>
+                            <th className="pb-1 text-left font-medium">역할</th>
+                            <th className="pb-1 text-center font-medium">세금유형</th>
+                            <th className="pb-1 text-right font-medium">총액</th>
+                            <th className="pb-1 text-right font-medium">세금</th>
+                            <th className="pb-1 text-right font-medium">실지급</th>
+                            <th className="pb-1 text-right font-medium">기관부담</th>
+                            <th className="pb-1 text-center font-medium">상태</th>
+                            <th className="pb-1 text-center font-medium">액션</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {staff.map((st) => (
+                            <tr key={st.id} className="border-b border-zinc-50">
+                              <td className="py-1.5 font-medium text-zinc-900 dark:text-zinc-100">{getStaffName(st)}</td>
+                              <td className="py-1.5 text-zinc-600">{st.role}({st.grade})</td>
+                              <td className="py-1.5 text-center"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] dark:bg-zinc-800">{st.paymentType}</span></td>
+                              <td className="py-1.5 text-right">{st.grossAmount.toLocaleString()}</td>
+                              <td className="py-1.5 text-right text-red-600">{st.taxAmount.toLocaleString()}</td>
+                              <td className="py-1.5 text-right font-bold text-emerald-700">{st.netAmount.toLocaleString()}</td>
+                              <td className="py-1.5 text-right text-zinc-500">{st.orgCost.toLocaleString()}</td>
+                              <td className="py-1.5 text-center"><span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold",
+                                st.status === "정산완료" ? "bg-emerald-100 text-emerald-700" : st.status === "배당" ? "bg-zinc-100 text-zinc-500" : "bg-amber-100 text-amber-700"
+                              )}>{st.status}</span></td>
+                              <td className="py-1.5 text-center">
+                                <button onClick={async () => { await deleteStaff(st.id); await reload(); }} className="rounded p-0.5 text-zinc-400 hover:text-red-600"><Trash2 size={10} /></button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="font-bold border-t">
+                            <td className="py-1.5" colSpan={3}>합계</td>
+                            <td className="py-1.5 text-right">{staff.reduce((s,st) => s+st.grossAmount, 0).toLocaleString()}</td>
+                            <td className="py-1.5 text-right text-red-600">{staff.reduce((s,st) => s+st.taxAmount, 0).toLocaleString()}</td>
+                            <td className="py-1.5 text-right text-emerald-700">{staff.reduce((s,st) => s+st.netAmount, 0).toLocaleString()}</td>
+                            <td className="py-1.5 text-right">{totalOrgCost.toLocaleString()}</td>
+                            <td colSpan={2}></td>
+                          </tr>
+                          <tr className="text-xs text-zinc-500">
+                            <td colSpan={3}>기관 순마진</td>
+                            <td colSpan={4} className={cn("text-right font-bold", margin >= 0 ? "text-emerald-700" : "text-red-600")}>{margin.toLocaleString()}천원 ({c.revenue > 0 ? Math.round(margin/c.revenue*100) : 0}%)</td>
+                            <td colSpan={2}></td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
+      )}
+
+      {/* 인력 배당 모달 */}
+      {showStaffModal && (
+        <StaffAssignModal
+          courseId={staffCourseId}
+          courseRevenue={staffCourseRevenue}
+          onClose={() => setShowStaffModal(false)}
+          onSave={async (data) => { await createStaff(data); await reload(); setShowStaffModal(false); }}
+        />
       )}
 
       {/* ── MM 정산 탭 ── */}
       {tab === "settlement" && (
-        <SettlementPanel courses={courses} roleAssignments={roleAssignments} />
+        <SettlementPanel courses={courses} staffAssignments={staffAssignments} />
       )}
 
       {/* ── 리드 모달 ── */}
@@ -268,134 +359,201 @@ export default function SalesPage() {
 
 /* ── 정산 패널 ── */
 
-function SettlementPanel({ courses, roleAssignments }: { courses: CourseRun[]; roleAssignments: UserRoleAssignment[] }) {
-  const [month, setMonth] = useState(() => new Date().toISOString().substring(0, 7));
-
-  // 해당 월 교육 과정 매출
-  const monthCourses = courses.filter((c) => c.startDate?.startsWith(month) || c.endDate?.startsWith(month));
-  const totalRevenue = monthCourses.length > 0
-    ? monthCourses.reduce((s, c) => s + c.revenue, 0)
-    : courses.reduce((s, c) => s + c.revenue, 0);
-
-  const hasAI = courses.some((c) => c.courseType === "AI_6H" || c.courseType === "AI_40H");
-
-  // 해당 월 활성 역할 (user_role_assignments에서)
-  const activeRoles = getActiveRolesForMonth(roleAssignments, month);
-
-  // 역할별 정산 항목 생성
-  const items = activeRoles.map((a) => {
-    let ratio = 0;
-    let amount = 0;
-
-    if (a.role === "강사") {
-      // 강사: 시간단가 × 예상투입시간 (월 80H 기본 추정)
-      const rate = hasAI ? a.aiHourlyRate : a.normalHourlyRate;
-      const estimatedHours = 80; // 월 예상 투입시간
-      amount = rate * estimatedHours;
-      ratio = totalRevenue > 0 ? Math.round(amount / totalRevenue * 100) : 0;
-    } else {
-      // 영업/행정/관리자: 배분율 기반
-      ratio = a.ratePercent;
-      amount = Math.round(totalRevenue * ratio / 100);
-    }
-
-    const hours = a.role === "강사" ? 80 : a.role === "행정" ? 140 : a.role === "영업" ? 100 : 0;
-    const mm = hours > 0 ? Math.round((hours / 160) * 100) / 100 : 0;
-
-    return {
-      id: a.id,
-      role: a.role,
-      grade: a.grade,
-      name: a.userName || a.userId,
-      ratio,
-      amount,
-      hours,
-      mm,
-      period: `${a.startDate} ~ ${a.endDate || "현재"}`,
-    };
+function StaffAssignModal({ courseId, courseRevenue, onClose, onSave }: {
+  courseId: string; courseRevenue: number;
+  onClose: () => void;
+  onSave: (data: Omit<CourseStaffAssignment, "id">) => void;
+}) {
+  const [form, setForm] = useState({
+    role: "강사" as StaffRole,
+    grade: "B급",
+    externalName: "",
+    paymentType: "3.3%" as PaymentType,
+    hours: 8,
+    unitPrice: 65,
+    ratePercent: 20,
+    notes: "",
   });
 
-  // 운영비 (10%) + 순마진 (잔여) 자동 추가
-  const assignedPercent = items.reduce((s, i) => s + i.ratio, 0);
-  const operatingPct = 10;
-  const marginPct = Math.max(0, 100 - assignedPercent - operatingPct);
-  const fixedItems = [
-    { id: "op", role: "운영비", grade: "", name: "(공통경비: GrowFit·인쇄·정산료 등)", ratio: operatingPct, amount: Math.round(totalRevenue * operatingPct / 100), hours: 0, mm: 0, period: "-" },
-    { id: "margin", role: "순마진", grade: "", name: "(기관)", ratio: marginPct, amount: Math.round(totalRevenue * marginPct / 100), hours: 0, mm: 0, period: "-" },
-  ];
+  const set = (k: string, v: string | number) => setForm((p) => ({ ...p, [k]: v }));
 
-  const allItems = [...items, ...fixedItems];
-  const totalAmount = allItems.reduce((s, i) => s + i.amount, 0);
-  const totalHours = allItems.reduce((s, i) => s + i.hours, 0);
-  const totalMM = allItems.reduce((s, i) => s + i.mm, 0);
+  const gross = form.role === "강사"
+    ? form.hours * form.unitPrice
+    : Math.round(courseRevenue * form.ratePercent / 100);
+  const tax = calculateTax(gross, form.paymentType);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">인력 배당</h2>
+          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100"><X size={18} /></button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-zinc-600">역할</label>
+            <select value={form.role} onChange={(e) => set("role", e.target.value)}
+              className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">
+              {(["강사","영업","행정","관리자","운영비"] as StaffRole[]).map((r) => <option key={r}>{r}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-zinc-600">담당자명</label>
+            <input value={form.externalName} onChange={(e) => set("externalName", e.target.value)} placeholder="이름"
+              className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-zinc-600">등급</label>
+            <input value={form.grade} onChange={(e) => set("grade", e.target.value)} placeholder="A급, 실무 등"
+              className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-zinc-600">세금 유형</label>
+            <select value={form.paymentType} onChange={(e) => set("paymentType", e.target.value)}
+              className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">
+              <option value="3.3%">3.3% 원천징수</option>
+              <option value="세금계산서">세금계산서 (VAT 10%)</option>
+              <option value="기타소득8.8%">기타소득 8.8%</option>
+            </select>
+          </div>
+          {form.role === "강사" ? (<>
+            <div>
+              <label className="text-xs font-medium text-zinc-600">투입시간 (H)</label>
+              <input type="number" value={form.hours} onChange={(e) => set("hours", Number(e.target.value))}
+                className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-zinc-600">시간단가 (천원)</label>
+              <input type="number" value={form.unitPrice} onChange={(e) => set("unitPrice", Number(e.target.value))}
+                className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+            </div>
+          </>) : (
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-zinc-600">배분율 (%) — 과정 매출 {courseRevenue.toLocaleString()}천원 기준</label>
+              <input type="number" value={form.ratePercent} onChange={(e) => set("ratePercent", Number(e.target.value))}
+                className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+            </div>
+          )}
+        </div>
+
+        {/* 자동 계산 미리보기 */}
+        <div className="mt-3 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+          <div className="grid grid-cols-4 gap-2 text-center text-[10px]">
+            <div><p className="text-zinc-500">총액</p><p className="font-bold text-zinc-900 dark:text-zinc-100">{gross.toLocaleString()}</p></div>
+            <div><p className="text-zinc-500">세금({form.paymentType})</p><p className="font-bold text-red-600">{tax.taxAmount.toLocaleString()}</p></div>
+            <div><p className="text-zinc-500">실지급</p><p className="font-bold text-emerald-700">{tax.netAmount.toLocaleString()}</p></div>
+            <div><p className="text-zinc-500">기관부담</p><p className="font-bold">{tax.orgCost.toLocaleString()}</p></div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg px-4 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-100">취소</button>
+          <button onClick={() => onSave({
+            courseId, userId: null, userName: "", externalName: form.externalName, externalContact: "",
+            role: form.role, grade: form.grade,
+            hours: form.role === "강사" ? form.hours : 0,
+            unitPrice: form.role === "강사" ? form.unitPrice : 0,
+            ratePercent: form.role !== "강사" ? form.ratePercent : 0,
+            paymentType: form.paymentType,
+            grossAmount: gross, taxAmount: tax.taxAmount, netAmount: tax.netAmount, orgCost: tax.orgCost,
+            status: "배당", paidAt: null, notes: form.notes,
+          })} className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700">배당</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── MM 정산 패널 (과정 기반) ── */
+
+function SettlementPanel({ courses, staffAssignments }: { courses: CourseRun[]; staffAssignments: CourseStaffAssignment[] }) {
+  const [month, setMonth] = useState(() => new Date().toISOString().substring(0, 7));
+
+  // 해당 월 과정 필터
+  const monthCourses = courses.filter((c) => c.startDate?.startsWith(month) || c.endDate?.startsWith(month));
+  const displayCourses = monthCourses.length > 0 ? monthCourses : courses;
+  const totalRevenue = displayCourses.reduce((s, c) => s + c.revenue, 0);
+  const totalOrgCost = staffAssignments.reduce((s, st) => s + st.orgCost, 0);
+  const totalNet = staffAssignments.reduce((s, st) => s + st.netAmount, 0);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)}
           className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
-        <span className="text-xs text-zinc-500">{activeRoles.length}명 활성 ({month})</span>
+        <span className="text-xs text-zinc-500">{displayCourses.length}개 과정</span>
       </div>
 
       <div className="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 p-5 text-white">
-        <p className="text-xs text-white/70">총 매출 ({monthCourses.length > 0 ? `${month} 과정` : "전체 과정"} 합계)</p>
+        <p className="text-xs text-white/70">총 매출</p>
         <p className="text-2xl font-bold">{totalRevenue.toLocaleString()} 천원</p>
-        <p className="text-xs text-white/60">{hasAI ? "AI 과정 포함 (탄력운영제 300% 적용)" : "일반 과정"} · 역할 배정 기반 자동 정산</p>
+        <p className="text-xs text-white/60">과정별 인력 배당 기반 · 입금 확인 후 정산</p>
       </div>
 
-      {activeRoles.length === 0 ? (
-        <div className="rounded-xl bg-amber-50 p-4 text-center text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-          {month}에 활성 역할이 없습니다. <strong>사용자 → 역할 배정</strong> 탭에서 역할을 먼저 추가하세요.
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-zinc-200/60 dark:bg-zinc-900 dark:ring-zinc-700/60">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
-                <th className="px-3 py-2 text-left font-medium text-zinc-500">역할</th>
-                <th className="px-3 py-2 text-left font-medium text-zinc-500">등급</th>
-                <th className="px-3 py-2 text-left font-medium text-zinc-500">담당자</th>
-                <th className="px-3 py-2 text-right font-medium text-zinc-500">배분율</th>
-                <th className="px-3 py-2 text-right font-medium text-zinc-500">금액 (천원)</th>
-                <th className="px-3 py-2 text-right font-medium text-zinc-500">투입시간</th>
-                <th className="px-3 py-2 text-right font-medium text-zinc-500">M/M</th>
-                <th className="px-3 py-2 text-center font-medium text-zinc-500">기간</th>
-              </tr>
-            </thead>
-            <tbody>
-              {allItems.map((item) => (
-                <tr key={item.id} className="border-b border-zinc-50 dark:border-zinc-800/50">
-                  <td className="px-3 py-2.5 font-semibold text-zinc-900 dark:text-zinc-100">{item.role}</td>
-                  <td className="px-3 py-2.5 text-zinc-500">{item.grade || "-"}</td>
-                  <td className="px-3 py-2.5 text-zinc-600 dark:text-zinc-400">{item.name}</td>
-                  <td className="px-3 py-2.5 text-right font-medium text-indigo-600">{item.ratio}%</td>
-                  <td className="px-3 py-2.5 text-right font-bold text-zinc-900 dark:text-zinc-100">{item.amount.toLocaleString()}</td>
-                  <td className="px-3 py-2.5 text-right text-zinc-500">{item.hours > 0 ? `${item.hours}H` : "-"}</td>
-                  <td className="px-3 py-2.5 text-right text-zinc-500">{item.mm > 0 ? item.mm.toFixed(2) : "-"}</td>
-                  <td className="px-3 py-2.5 text-center text-[10px] text-zinc-400">{item.period}</td>
-                </tr>
-              ))}
-              <tr className="bg-zinc-50 font-bold dark:bg-zinc-800/50">
-                <td className="px-3 py-2.5 text-zinc-900 dark:text-zinc-100">합계</td>
-                <td></td>
-                <td></td>
-                <td className="px-3 py-2.5 text-right text-indigo-600">{allItems.reduce((s, i) => s + i.ratio, 0)}%</td>
-                <td className="px-3 py-2.5 text-right text-zinc-900 dark:text-zinc-100">{totalAmount.toLocaleString()}</td>
-                <td className="px-3 py-2.5 text-right text-zinc-500">{totalHours > 0 ? `${totalHours}H` : "-"}</td>
-                <td className="px-3 py-2.5 text-right text-zinc-500">{totalMM > 0 ? totalMM.toFixed(2) : "-"}</td>
-                <td></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* 과정별 정산 */}
+      {displayCourses.map((c) => {
+        const staff = staffAssignments.filter((s) => s.courseId === c.id);
+        const courseOrgCost = staff.reduce((s, st) => s + st.orgCost, 0);
+        const margin = c.revenue - courseOrgCost;
+        const settled = staff.filter((s) => s.status === "정산완료").length;
+
+        return (
+          <div key={c.id} className="rounded-xl bg-white shadow-sm ring-1 ring-zinc-200/60 p-4 dark:bg-zinc-900 dark:ring-zinc-700/60">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{c.title}</h3>
+                <p className="text-[10px] text-zinc-500">{c.startDate} ~ {c.endDate} · 매출 {c.revenue.toLocaleString()}천원</p>
+              </div>
+              <div className="text-right">
+                <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  c.status === "입금완료" || c.status === "정산완료" ? "bg-emerald-100 text-emerald-700" :
+                  c.status === "진행중" || c.status === "수료" ? "bg-amber-100 text-amber-700" :
+                  "bg-zinc-100 text-zinc-500"
+                )}>{c.status}</span>
+                <p className={cn("mt-1 text-xs font-bold", margin >= 0 ? "text-emerald-700" : "text-red-600")}>
+                  마진 {margin.toLocaleString()}천원 ({c.revenue > 0 ? Math.round(margin/c.revenue*100) : 0}%)
+                </p>
+              </div>
+            </div>
+
+            {staff.length === 0 ? (
+              <p className="text-xs text-zinc-400">배당된 인력 없음 → 교육과정 탭에서 인력 배당</p>
+            ) : (
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-zinc-500 border-b">
+                    <th className="pb-1 text-left font-medium">담당자</th>
+                    <th className="pb-1 text-left font-medium">역할</th>
+                    <th className="pb-1 text-center font-medium">세금</th>
+                    <th className="pb-1 text-right font-medium">총액</th>
+                    <th className="pb-1 text-right font-medium">세금액</th>
+                    <th className="pb-1 text-right font-medium">실지급</th>
+                    <th className="pb-1 text-center font-medium">상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {staff.map((st) => (
+                    <tr key={st.id} className="border-b border-zinc-50">
+                      <td className="py-1.5 font-medium">{getStaffName(st)}</td>
+                      <td className="py-1.5">{st.role}({st.grade})</td>
+                      <td className="py-1.5 text-center"><span className="rounded bg-zinc-100 px-1 py-0.5 text-[9px] dark:bg-zinc-800">{st.paymentType}</span></td>
+                      <td className="py-1.5 text-right">{st.grossAmount.toLocaleString()}</td>
+                      <td className="py-1.5 text-right text-red-600">{st.taxAmount.toLocaleString()}</td>
+                      <td className="py-1.5 text-right font-bold text-emerald-700">{st.netAmount.toLocaleString()}</td>
+                      <td className="py-1.5 text-center"><span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold",
+                        st.status === "정산완료" ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"
+                      )}>{st.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        );
+      })}
 
       <div className="rounded-lg bg-blue-50 p-3 text-xs text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
-        <strong>데이터 소스:</strong> 사용자 → 역할 배정 탭에서 등록한 역할·등급·단가·기간 기반 자동 계산. 강사는 시간단가(AI/일반) × 80H 추정, 영업/행정/관리자는 배분율(%) × 매출.
-      </div>
-
-      <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-        <strong>M/M 산정:</strong> 투입시간 / 160H(월 표준근로시간). 정부 환급은 HRD-Net 수료 기준으로 별도 정산.
+        <strong>정산 흐름:</strong> 과정 개설 → 인력 배당 → 강의 실시 → 수료 → 기업 입금 확인 → 인력별 정산 지급. 강사는 시간×단가, 영업/행정은 매출×배분율. 세금은 계약 유형(3.3%/세금계산서/8.8%)에 따라 자동 계산.
       </div>
     </div>
   );
