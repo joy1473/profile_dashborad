@@ -4,9 +4,14 @@ import type { CardProfile } from "@/types/card-profile";
 const USE_MOCK = !process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 export function generateVCard(profile: CardProfile): string {
+  // iOS는 N 필드 필수 — 없으면 ORG가 이름 자리에 표시됨
+  const nameParts = profile.name.trim().split(/\s+/);
+  const lastName = nameParts[0] || "";
+  const firstName = nameParts.slice(1).join(" ") || "";
   const lines = [
     "BEGIN:VCARD",
     "VERSION:3.0",
+    `N:${lastName};${firstName};;;`,
     `FN:${profile.name}`,
   ];
   if (profile.company) lines.push(`ORG:${profile.company}`);
