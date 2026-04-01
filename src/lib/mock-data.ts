@@ -31,14 +31,14 @@ export const categoryData: ChartData[] = [
 ];
 
 export const users: User[] = [
-  { id: "1", name: "김민수", email: "minsu@example.com", role: "admin", status: "active", joinedAt: "2024-01-15" },
-  { id: "2", name: "이지은", email: "jieun@example.com", role: "user", status: "active", joinedAt: "2024-02-20" },
-  { id: "3", name: "박서준", email: "seojun@example.com", role: "user", status: "inactive", joinedAt: "2024-03-10" },
-  { id: "4", name: "최유리", email: "yuri@example.com", role: "viewer", status: "active", joinedAt: "2024-04-05" },
-  { id: "5", name: "정하늘", email: "haneul@example.com", role: "user", status: "active", joinedAt: "2024-05-12" },
-  { id: "6", name: "강도윤", email: "doyun@example.com", role: "admin", status: "active", joinedAt: "2024-06-01" },
-  { id: "7", name: "윤서연", email: "seoyeon@example.com", role: "user", status: "inactive", joinedAt: "2024-07-18" },
-  { id: "8", name: "임재현", email: "jaehyun@example.com", role: "viewer", status: "active", joinedAt: "2024-08-22" },
+  { id: "1", name: "김민수", email: "minsu@example.com", role: "admin", teamRole: "관리자", status: "active", joinedAt: "2024-01-15" },
+  { id: "2", name: "이지은", email: "jieun@example.com", role: "user", teamRole: "영업", status: "active", joinedAt: "2024-02-20" },
+  { id: "3", name: "박서준", email: "seojun@example.com", role: "user", teamRole: "강사", status: "inactive", joinedAt: "2024-03-10" },
+  { id: "4", name: "최유리", email: "yuri@example.com", role: "viewer", teamRole: "", status: "active", joinedAt: "2024-04-05" },
+  { id: "5", name: "정하늘", email: "haneul@example.com", role: "user", teamRole: "행정", status: "active", joinedAt: "2024-05-12" },
+  { id: "6", name: "강도윤", email: "doyun@example.com", role: "admin", teamRole: "관리자", status: "active", joinedAt: "2024-06-01" },
+  { id: "7", name: "윤서연", email: "seoyeon@example.com", role: "user", teamRole: "강사", status: "inactive", joinedAt: "2024-07-18" },
+  { id: "8", name: "임재현", email: "jaehyun@example.com", role: "viewer", teamRole: "", status: "active", joinedAt: "2024-08-22" },
 ];
 
 export const activities: Activity[] = [

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
+import { getSidoList, getSigunguList, detectRegion } from "@/lib/regions";
 import type { SalesLead, CourseRun, PipelineSummary, LeadStatus, CourseType } from "@/types/sales";
 import {
   getLeads, createLead, updateLead, deleteLead,
@@ -346,12 +347,23 @@ function LeadModal({ lead, onClose, onSave }: {
   onClose: () => void;
   onSave: (data: Partial<SalesLead>) => void;
 }) {
+  // 지역: 시도+시군구 분리
+  const parseSido = (region: string) => {
+    const parts = region.split(" ");
+    return parts.length > 1 ? parts[0] : "서울특별시";
+  };
+  const parseSigungu = (region: string) => {
+    const parts = region.split(" ");
+    return parts.length > 1 ? parts.slice(1).join(" ") : region;
+  };
+
   const [form, setForm] = useState({
     company: lead?.company ?? "",
     contact: lead?.contact ?? "",
     phone: lead?.phone ?? "",
     email: lead?.email ?? "",
-    region: lead?.region ?? "금천구",
+    sido: parseSido(lead?.region ?? "서울특별시 금천구"),
+    sigungu: parseSigungu(lead?.region ?? "서울특별시 금천구"),
     employeeCount: lead?.employeeCount ?? 10,
     status: lead?.status ?? "신규" as LeadStatus,
     courseType: lead?.courseType ?? "AI_6H" as CourseType,
@@ -361,6 +373,26 @@ function LeadModal({ lead, onClose, onSave }: {
 
   const set = (key: string, value: string | number) => setForm((p) => ({ ...p, [key]: value }));
 
+  // 기업명 입력 시 지역 자동 감지
+  const handleCompanyChange = (v: string) => {
+    set("company", v);
+    const detected = detectRegion(v);
+    if (detected) {
+      setForm((p) => ({ ...p, company: v, sido: detected.sido, sigungu: detected.sigungu }));
+    }
+  };
+
+  // 시도 변경 시 시군구 초기화
+  const handleSidoChange = (v: string) => {
+    const list = getSigunguList(v);
+    setForm((p) => ({ ...p, sido: v, sigungu: list[0] || "" }));
+  };
+
+  // onSave 시 region 조합
+  const handleSave = () => {
+    onSave({ ...form, region: `${form.sido} ${form.sigungu}` });
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
@@ -369,11 +401,12 @@ function LeadModal({ lead, onClose, onSave }: {
           <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X size={18} /></button>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Input label="기업명" value={form.company} onChange={(v) => set("company", v)} />
+          <Input label="기업명 (지역 자동감지)" value={form.company} onChange={handleCompanyChange} />
           <Input label="담당자" value={form.contact} onChange={(v) => set("contact", v)} />
           <Input label="전화번호" value={form.phone} onChange={(v) => set("phone", v)} />
           <Input label="이메일" value={form.email} onChange={(v) => set("email", v)} />
-          <Select label="지역" value={form.region} options={["금천구", "구로구", "영등포구", "기타"]} onChange={(v) => set("region", v)} />
+          <Select label="시도" value={form.sido} options={getSidoList()} onChange={handleSidoChange} />
+          <Select label="시군구" value={form.sigungu} options={getSigunguList(form.sido)} onChange={(v) => set("sigungu", v)} />
           <Input label="직원수" type="number" value={String(form.employeeCount)} onChange={(v) => set("employeeCount", Number(v))} />
           <Select label="상태" value={form.status} options={ALL_STATUSES} onChange={(v) => set("status", v)} />
           <Select label="과정 유형" value={form.courseType} options={["AI_6H", "AI_40H", "일반"]} onChange={(v) => set("courseType", v)} />
@@ -385,7 +418,7 @@ function LeadModal({ lead, onClose, onSave }: {
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-lg px-4 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">취소</button>
-          <button onClick={() => onSave(form)} className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700">저장</button>
+          <button onClick={handleSave} className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700">저장</button>
         </div>
       </div>
     </div>

@@ -1,8 +1,11 @@
+export type TeamRole = "" | "영업" | "강사" | "행정" | "관리자";
+
 export interface User {
   id: string;
   name: string;
   email: string;
   role: "admin" | "user" | "viewer";
+  teamRole: TeamRole;
   status: "active" | "inactive";
   joinedAt: string;
   avatar?: string;
