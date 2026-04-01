@@ -222,7 +222,67 @@ export function DocumentViewer() {
     };
   }, [editMode, documentModel, setPendingSelection]);
 
-  // --- 조건부 early return (모든 useEffect 이후) ---
+  // PDF 이미지 페이지 감지 (hooks 전에 계산 — 조건부 return 이전)
+  const imageElements = documentModel
+    ? (documentModel.sections as DocumentElement[]).filter((el) => el.type === 'image' && el.imageDataUrl)
+    : [];
+  const hasScanPages = imageElements.length > 0;
+
+  // OCR 실행 (hook은 항상 호출되어야 함)
+  const runOcr = useCallback(async () => {
+    if (!hasScanPages) return;
+    setOcrLoading(true);
+    setOcrResults([]);
+    const results: { page: number; pairs: { key: string; value: string; confidence: number }[] }[] = [];
+
+    for (const el of imageElements) {
+      if (!el.imageDataUrl) continue;
+      const pageNum = el.position?.pageNumber ?? 0;
+      try {
+        const pairs = await ocrExtractKeyValues(el.imageDataUrl, pageNum);
+        results.push({ page: pageNum, pairs });
+      } catch (err) {
+        console.error(`OCR page ${pageNum} failed:`, err);
+        results.push({ page: pageNum, pairs: [] });
+      }
+    }
+
+    setOcrResults(results);
+    setOcrLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasScanPages, documentModel]);
+
+  // OCR 결과를 KV 패널에 추가
+  const addOcrToKv = useCallback(() => {
+    for (const r of ocrResults) {
+      for (const pair of r.pairs) {
+        if (!pair.key) continue;
+        const dummyPos: DocumentPosition = {
+          fileType: 'pdf',
+          sectionIndex: 0,
+          paragraphIndex: 0,
+          runIndex: 0,
+          charOffset: 0,
+          charLength: 0,
+          pageNumber: r.page,
+          domElementId: `ocr-p${r.page}-${uuid().slice(0, 6)}`,
+        };
+        addKvPair({
+          id: uuid(),
+          key: pair.key,
+          keyPosition: dummyPos,
+          value: pair.value,
+          valuePosition: dummyPos,
+          contentType: 'text',
+          notes: `OCR p${r.page} (${Math.round(pair.confidence * 100)}%)`,
+        });
+      }
+    }
+  }, [ocrResults, addKvPair]);
+
+  const totalOcrPairs = ocrResults.reduce((s, r) => s + r.pairs.length, 0);
+
+  // --- 조건부 early return (모든 hooks 이후) ---
   if (isParsingDocument) {
     return (
       <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
@@ -257,7 +317,6 @@ export function DocumentViewer() {
           sandbox="allow-same-origin allow-scripts"
           title="문서 미리보기"
           onLoad={() => {
-            // 편집모드 커서만 변경 (색상 하이라이트 없음)
             const iframeDoc = iframeRef.current?.contentDocument;
             if (!iframeDoc) return;
             const style = iframeDoc.createElement('style');
@@ -269,65 +328,6 @@ export function DocumentViewer() {
       </div>
     );
   }
-
-  // PDF 이미지 페이지 감지
-  const imageElements = (documentModel.sections as DocumentElement[]).filter(
-    (el) => el.type === 'image' && el.imageDataUrl
-  );
-  const hasScanPages = imageElements.length > 0;
-
-  // OCR 실행
-  const runOcr = useCallback(async () => {
-    if (!hasScanPages) return;
-    setOcrLoading(true);
-    setOcrResults([]);
-    const results: typeof ocrResults = [];
-
-    for (const el of imageElements) {
-      if (!el.imageDataUrl) continue;
-      const pageNum = el.position?.pageNumber ?? 0;
-      try {
-        const pairs = await ocrExtractKeyValues(el.imageDataUrl, pageNum);
-        results.push({ page: pageNum, pairs });
-      } catch (err) {
-        console.error(`OCR page ${pageNum} failed:`, err);
-        results.push({ page: pageNum, pairs: [] });
-      }
-    }
-
-    setOcrResults(results);
-    setOcrLoading(false);
-  }, [imageElements, hasScanPages]);
-
-  // OCR 결과를 KV 패널에 추가
-  const addOcrToKv = useCallback(() => {
-    for (const r of ocrResults) {
-      for (const pair of r.pairs) {
-        if (!pair.key) continue;
-        const dummyPos: DocumentPosition = {
-          fileType: 'pdf',
-          sectionIndex: 0,
-          paragraphIndex: 0,
-          runIndex: 0,
-          charOffset: 0,
-          charLength: 0,
-          pageNumber: r.page,
-          domElementId: `ocr-p${r.page}-${uuid().slice(0, 6)}`,
-        };
-        addKvPair?.({
-          id: uuid(),
-          key: pair.key,
-          keyPosition: dummyPos,
-          value: pair.value,
-          valuePosition: dummyPos,
-          contentType: 'text',
-          notes: `OCR p${r.page} (${Math.round(pair.confidence * 100)}%)`,
-        });
-      }
-    }
-  }, [ocrResults, addKvPair]);
-
-  const totalOcrPairs = ocrResults.reduce((s, r) => s + r.pairs.length, 0);
 
   return (
     <div>
