@@ -11,6 +11,9 @@ import { cn } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
 import { getSidoList, getSigunguList, detectRegion } from "@/lib/regions";
 import type { SalesLead, CourseRun, PipelineSummary, LeadStatus, CourseType } from "@/types/sales";
+import type { UserRoleAssignment } from "@/types/user-roles";
+import { getActiveRolesForMonth } from "@/types/user-roles";
+import { getRoleAssignments, seedRoleAssignments } from "@/lib/user-roles-data";
 import {
   getLeads, createLead, updateLead, deleteLead,
   getCourses, createCourse,
@@ -47,16 +50,18 @@ export default function SalesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingLead, setEditingLead] = useState<SalesLead | null>(null);
   const [showCourseModal, setShowCourseModal] = useState(false);
+  const [roleAssignments, setRoleAssignments] = useState<UserRoleAssignment[]>([]);
 
   const reload = useCallback(async () => {
-    const [l, c, p] = await Promise.all([getLeads(), getCourses(), getPipelineSummary()]);
+    const [l, c, p, r] = await Promise.all([getLeads(), getCourses(), getPipelineSummary(), getRoleAssignments()]);
     setLeads(l);
     setCourses(c);
     setPipeline(p);
+    setRoleAssignments(r);
   }, []);
 
   useEffect(() => {
-    seedDemoData().then(() => reload());
+    seedDemoData().then(() => seedRoleAssignments()).then(() => reload());
     getSession().then((s) => {
       if (s?.user) setUserName(s.user.user_metadata?.full_name ?? s.user.email ?? "");
     });
@@ -232,7 +237,7 @@ export default function SalesPage() {
 
       {/* ── MM 정산 탭 ── */}
       {tab === "settlement" && (
-        <SettlementPanel courses={courses} />
+        <SettlementPanel courses={courses} roleAssignments={roleAssignments} />
       )}
 
       {/* ── 리드 모달 ── */}
@@ -263,78 +268,134 @@ export default function SalesPage() {
 
 /* ── 정산 패널 ── */
 
-function SettlementPanel({ courses }: { courses: CourseRun[] }) {
-  const totalRevenue = courses.reduce((s, c) => s + c.revenue, 0);
-  const isAI = true;
+function SettlementPanel({ courses, roleAssignments }: { courses: CourseRun[]; roleAssignments: UserRoleAssignment[] }) {
+  const [month, setMonth] = useState(() => new Date().toISOString().substring(0, 7));
 
-  const team = [
-    { role: "영업", name: "영업담당", hours: 120 },
-    { role: "강사", name: "AI강사A", hours: 160 },
-    { role: "강사", name: "AI강사B", hours: 80 },
-    { role: "행정", name: "행정담당", hours: 140 },
-    { role: "운영비", name: "(공통경비)", hours: 0 },
-    { role: "순마진", name: "(기관)", hours: 0 },
+  // 해당 월 교육 과정 매출
+  const monthCourses = courses.filter((c) => c.startDate?.startsWith(month) || c.endDate?.startsWith(month));
+  const totalRevenue = monthCourses.length > 0
+    ? monthCourses.reduce((s, c) => s + c.revenue, 0)
+    : courses.reduce((s, c) => s + c.revenue, 0);
+
+  const hasAI = courses.some((c) => c.courseType === "AI_6H" || c.courseType === "AI_40H");
+
+  // 해당 월 활성 역할 (user_role_assignments에서)
+  const activeRoles = getActiveRolesForMonth(roleAssignments, month);
+
+  // 역할별 정산 항목 생성
+  const items = activeRoles.map((a) => {
+    let ratio = 0;
+    let amount = 0;
+
+    if (a.role === "강사") {
+      // 강사: 시간단가 × 예상투입시간 (월 80H 기본 추정)
+      const rate = hasAI ? a.aiHourlyRate : a.normalHourlyRate;
+      const estimatedHours = 80; // 월 예상 투입시간
+      amount = rate * estimatedHours;
+      ratio = totalRevenue > 0 ? Math.round(amount / totalRevenue * 100) : 0;
+    } else {
+      // 영업/행정/관리자: 배분율 기반
+      ratio = a.ratePercent;
+      amount = Math.round(totalRevenue * ratio / 100);
+    }
+
+    const hours = a.role === "강사" ? 80 : a.role === "행정" ? 140 : a.role === "영업" ? 100 : 0;
+    const mm = hours > 0 ? Math.round((hours / 160) * 100) / 100 : 0;
+
+    return {
+      id: a.id,
+      role: a.role,
+      grade: a.grade,
+      name: a.userName || a.userId,
+      ratio,
+      amount,
+      hours,
+      mm,
+      period: `${a.startDate} ~ ${a.endDate || "현재"}`,
+    };
+  });
+
+  // 운영비 (10%) + 순마진 (잔여) 자동 추가
+  const assignedPercent = items.reduce((s, i) => s + i.ratio, 0);
+  const operatingPct = 10;
+  const marginPct = Math.max(0, 100 - assignedPercent - operatingPct);
+  const fixedItems = [
+    { id: "op", role: "운영비", grade: "", name: "(공통경비: GrowFit·인쇄·정산료 등)", ratio: operatingPct, amount: Math.round(totalRevenue * operatingPct / 100), hours: 0, mm: 0, period: "-" },
+    { id: "margin", role: "순마진", grade: "", name: "(기관)", ratio: marginPct, amount: Math.round(totalRevenue * marginPct / 100), hours: 0, mm: 0, period: "-" },
   ];
 
-  const settlement = calculateSettlement(
-    new Date().toISOString().substring(0, 7),
-    totalRevenue,
-    team,
-    isAI
-  );
-
-  const items = team.map((m) => {
-    const ratios: Record<string, number> = { 영업: 22, 강사: 24, 행정: 13, 운영비: 10, 순마진: 17 };
-    const ratio = ratios[m.role] || 10;
-    const amount = Math.round(totalRevenue * ratio / 100);
-    return { ...m, ratio, amount, mm: m.hours > 0 ? Math.round((m.hours / 160) * 100) / 100 : 0 };
-  });
+  const allItems = [...items, ...fixedItems];
+  const totalAmount = allItems.reduce((s, i) => s + i.amount, 0);
+  const totalHours = allItems.reduce((s, i) => s + i.hours, 0);
+  const totalMM = allItems.reduce((s, i) => s + i.mm, 0);
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 p-5 text-white">
-        <p className="text-xs text-white/70">총 매출 (교육 과정 합계)</p>
-        <p className="text-2xl font-bold">{totalRevenue.toLocaleString()} 천원</p>
-        <p className="text-xs text-white/60">AI 과정 기준 배분 (탄력운영제 300% 적용)</p>
+      <div className="flex items-center gap-3">
+        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)}
+          className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+        <span className="text-xs text-zinc-500">{activeRoles.length}명 활성 ({month})</span>
       </div>
 
-      <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-zinc-200/60 dark:bg-zinc-900 dark:ring-zinc-700/60">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
-              <th className="px-3 py-2 text-left font-medium text-zinc-500">역할</th>
-              <th className="px-3 py-2 text-left font-medium text-zinc-500">담당자</th>
-              <th className="px-3 py-2 text-right font-medium text-zinc-500">배분율</th>
-              <th className="px-3 py-2 text-right font-medium text-zinc-500">금액 (천원)</th>
-              <th className="px-3 py-2 text-right font-medium text-zinc-500">투입시간</th>
-              <th className="px-3 py-2 text-right font-medium text-zinc-500">M/M</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item, i) => (
-              <tr key={i} className="border-b border-zinc-50 dark:border-zinc-800/50">
-                <td className="px-3 py-2.5 font-semibold text-zinc-900 dark:text-zinc-100">{item.role}</td>
-                <td className="px-3 py-2.5 text-zinc-600 dark:text-zinc-400">{item.name}</td>
-                <td className="px-3 py-2.5 text-right font-medium text-indigo-600">{item.ratio}%</td>
-                <td className="px-3 py-2.5 text-right font-bold text-zinc-900 dark:text-zinc-100">{item.amount.toLocaleString()}</td>
-                <td className="px-3 py-2.5 text-right text-zinc-500">{item.hours > 0 ? `${item.hours}H` : "-"}</td>
-                <td className="px-3 py-2.5 text-right text-zinc-500">{item.mm > 0 ? item.mm.toFixed(2) : "-"}</td>
+      <div className="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 p-5 text-white">
+        <p className="text-xs text-white/70">총 매출 ({monthCourses.length > 0 ? `${month} 과정` : "전체 과정"} 합계)</p>
+        <p className="text-2xl font-bold">{totalRevenue.toLocaleString()} 천원</p>
+        <p className="text-xs text-white/60">{hasAI ? "AI 과정 포함 (탄력운영제 300% 적용)" : "일반 과정"} · 역할 배정 기반 자동 정산</p>
+      </div>
+
+      {activeRoles.length === 0 ? (
+        <div className="rounded-xl bg-amber-50 p-4 text-center text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+          {month}에 활성 역할이 없습니다. <strong>사용자 → 역할 배정</strong> 탭에서 역할을 먼저 추가하세요.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-zinc-200/60 dark:bg-zinc-900 dark:ring-zinc-700/60">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
+                <th className="px-3 py-2 text-left font-medium text-zinc-500">역할</th>
+                <th className="px-3 py-2 text-left font-medium text-zinc-500">등급</th>
+                <th className="px-3 py-2 text-left font-medium text-zinc-500">담당자</th>
+                <th className="px-3 py-2 text-right font-medium text-zinc-500">배분율</th>
+                <th className="px-3 py-2 text-right font-medium text-zinc-500">금액 (천원)</th>
+                <th className="px-3 py-2 text-right font-medium text-zinc-500">투입시간</th>
+                <th className="px-3 py-2 text-right font-medium text-zinc-500">M/M</th>
+                <th className="px-3 py-2 text-center font-medium text-zinc-500">기간</th>
               </tr>
-            ))}
-            <tr className="bg-zinc-50 font-bold dark:bg-zinc-800/50">
-              <td className="px-3 py-2.5 text-zinc-900 dark:text-zinc-100">합계</td>
-              <td></td>
-              <td className="px-3 py-2.5 text-right text-indigo-600">100%</td>
-              <td className="px-3 py-2.5 text-right text-zinc-900 dark:text-zinc-100">{items.reduce((s, i) => s + i.amount, 0).toLocaleString()}</td>
-              <td className="px-3 py-2.5 text-right text-zinc-500">{items.reduce((s, i) => s + i.hours, 0)}H</td>
-              <td className="px-3 py-2.5 text-right text-zinc-500">{items.reduce((s, i) => s + i.mm, 0).toFixed(2)}</td>
-            </tr>
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {allItems.map((item) => (
+                <tr key={item.id} className="border-b border-zinc-50 dark:border-zinc-800/50">
+                  <td className="px-3 py-2.5 font-semibold text-zinc-900 dark:text-zinc-100">{item.role}</td>
+                  <td className="px-3 py-2.5 text-zinc-500">{item.grade || "-"}</td>
+                  <td className="px-3 py-2.5 text-zinc-600 dark:text-zinc-400">{item.name}</td>
+                  <td className="px-3 py-2.5 text-right font-medium text-indigo-600">{item.ratio}%</td>
+                  <td className="px-3 py-2.5 text-right font-bold text-zinc-900 dark:text-zinc-100">{item.amount.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-right text-zinc-500">{item.hours > 0 ? `${item.hours}H` : "-"}</td>
+                  <td className="px-3 py-2.5 text-right text-zinc-500">{item.mm > 0 ? item.mm.toFixed(2) : "-"}</td>
+                  <td className="px-3 py-2.5 text-center text-[10px] text-zinc-400">{item.period}</td>
+                </tr>
+              ))}
+              <tr className="bg-zinc-50 font-bold dark:bg-zinc-800/50">
+                <td className="px-3 py-2.5 text-zinc-900 dark:text-zinc-100">합계</td>
+                <td></td>
+                <td></td>
+                <td className="px-3 py-2.5 text-right text-indigo-600">{allItems.reduce((s, i) => s + i.ratio, 0)}%</td>
+                <td className="px-3 py-2.5 text-right text-zinc-900 dark:text-zinc-100">{totalAmount.toLocaleString()}</td>
+                <td className="px-3 py-2.5 text-right text-zinc-500">{totalHours > 0 ? `${totalHours}H` : "-"}</td>
+                <td className="px-3 py-2.5 text-right text-zinc-500">{totalMM > 0 ? totalMM.toFixed(2) : "-"}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="rounded-lg bg-blue-50 p-3 text-xs text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+        <strong>데이터 소스:</strong> 사용자 → 역할 배정 탭에서 등록한 역할·등급·단가·기간 기반 자동 계산. 강사는 시간단가(AI/일반) × 80H 추정, 영업/행정/관리자는 배분율(%) × 매출.
       </div>
 
       <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-        <strong>M/M 산정:</strong> 투입시간 / 160H(월 표준근로시간). 예) 120H = 0.75 M/M. 정부 환급은 HRD-Net 수료 기준으로 별도 정산.
+        <strong>M/M 산정:</strong> 투입시간 / 160H(월 표준근로시간). 정부 환급은 HRD-Net 수료 기준으로 별도 정산.
       </div>
     </div>
   );
