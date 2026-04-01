@@ -46,6 +46,14 @@ export default function BannerLayout({
           </a>
           <div className="flex items-center gap-3">
             <a
+              href="https://bctone-71574429.mintlify.app/guide"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-zinc-500 hover:underline dark:text-zinc-400"
+            >
+              매뉴얼
+            </a>
+            <a
               href="https://growfit.kr"
               target="_blank"
               rel="noopener noreferrer"
@@ -54,7 +62,9 @@ export default function BannerLayout({
               growfit.kr
             </a>
             <a
-              href="/login"
+              href="https://growfit.kr"
+              target="_blank"
+              rel="noopener noreferrer"
               className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900"
             >
               로그인

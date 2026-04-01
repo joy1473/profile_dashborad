@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   Brain, Sparkles, Users, Clock, Target, ChevronRight,
-  Zap, MessageSquare, Database, Wrench, Bot,
+  Zap, MessageSquare, Database, Wrench, Bot, Mail,
   Building2, TrendingUp, GraduationCap, Phone,
   Briefcase, Calculator, UserCheck,
 } from "lucide-react";
@@ -118,10 +118,14 @@ export default function BannerPage() {
             AI 실무 역량 강화 과정
           </h1>
           <p className="mb-1 text-lg text-white/90">코딩 없이, 6시간 만에 &quot;AI가 일하게 만드는 사람&quot;이 됩니다.</p>
-          <p className="mb-6 text-sm text-white/70">대상: 금천구·구로구 중소기업 실무자 | 플랫폼: <a href="https://growfit.kr" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">growfit.kr</a></p>
+          <p className="mb-2 text-sm text-white/70">대상: 금천구·구로구 중소기업 실무자 | 플랫폼: <a href="https://growfit.kr" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">growfit.kr</a></p>
+          <p className="mb-5 text-xs text-white/50">문의: 조은아 | joytec@naver.com | 010-2648-6726</p>
           <div className="flex flex-wrap gap-3">
-            <a href="mailto:joytec@naver.com?subject=GrowFit AI 과정 문의" className="flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-lg transition hover:bg-indigo-50">
-              <Phone size={16} /> 교육 문의하기
+            <a href="tel:010-2648-6726" className="flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-lg transition hover:bg-indigo-50">
+              <Phone size={16} /> 교육 문의 (전화)
+            </a>
+            <a href="mailto:joytec@naver.com?subject=GrowFit AI 6시간 과정 문의" className="flex items-center gap-2 rounded-xl bg-white/20 px-5 py-2.5 text-sm font-medium text-white backdrop-blur transition hover:bg-white/30">
+              <Mail size={16} /> 이메일 문의
             </a>
             <a href="https://growfit.kr" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl border border-white/30 px-5 py-2.5 text-sm font-medium text-white backdrop-blur transition hover:bg-white/10">
               <Sparkles size={16} /> GrowFit 체험하기
@@ -224,10 +228,16 @@ export default function BannerPage() {
           {/* CTA */}
           <div className="rounded-xl bg-gradient-to-r from-indigo-50 to-purple-50 p-5 text-center dark:from-indigo-950/30 dark:to-purple-950/30">
             <p className="mb-1 text-base font-bold text-zinc-900 dark:text-zinc-100">6시간 후, &quot;AI가 일하게 만드는 사람&quot;이 됩니다.</p>
-            <p className="mb-3 text-xs text-zinc-500">금천구·구로구 중소기업 대상 | 코딩 불필요 | GrowFit 플랫폼 제공</p>
-            <a href="mailto:joytec@naver.com?subject=GrowFit 6시간 과정 신청" className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-700">
-              <Phone size={16} /> 교육 신청·문의
-            </a>
+            <p className="mb-2 text-xs text-zinc-500">금천구·구로구 중소기업 대상 | 코딩 불필요 | GrowFit 플랫폼 제공</p>
+            <p className="mb-3 text-xs font-medium text-zinc-600 dark:text-zinc-400">조은아 | 010-2648-6726 | joytec@naver.com</p>
+            <div className="flex items-center justify-center gap-3">
+              <a href="tel:010-2648-6726" className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-700">
+                <Phone size={16} /> 전화 문의
+              </a>
+              <a href="mailto:joytec@naver.com?subject=GrowFit AI 6시간 과정 신청" className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow ring-1 ring-indigo-200 transition hover:bg-indigo-50">
+                <Mail size={16} /> 이메일 신청
+              </a>
+            </div>
           </div>
         </section>
       )}
