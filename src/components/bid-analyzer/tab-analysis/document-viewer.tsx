@@ -1,13 +1,16 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import DOMPurify from 'dompurify';
 import { useBidAnalyzerStore } from '@/store/bid-analyzer-store';
-import type { TextSelection, DocumentPosition } from '@/types/bid-analyzer';
+import type { TextSelection, DocumentPosition, DocumentElement } from '@/types/bid-analyzer';
 import { v4 as uuid } from 'uuid';
+import { ocrExtractKeyValues } from '@/lib/pdf-parser';
 
 export function DocumentViewer() {
-  const { documentModel, editMode, setPendingSelection, isParsingDocument } = useBidAnalyzerStore();
+  const { documentModel, editMode, setPendingSelection, isParsingDocument, addKvPair } = useBidAnalyzerStore();
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrResults, setOcrResults] = useState<{ page: number; pairs: { key: string; value: string; confidence: number }[] }[]>([]);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -267,13 +270,131 @@ export function DocumentViewer() {
     );
   }
 
+  // PDF 이미지 페이지 감지
+  const imageElements = (documentModel.sections as DocumentElement[]).filter(
+    (el) => el.type === 'image' && el.imageDataUrl
+  );
+  const hasScanPages = imageElements.length > 0;
+
+  // OCR 실행
+  const runOcr = useCallback(async () => {
+    if (!hasScanPages) return;
+    setOcrLoading(true);
+    setOcrResults([]);
+    const results: typeof ocrResults = [];
+
+    for (const el of imageElements) {
+      if (!el.imageDataUrl) continue;
+      const pageNum = el.position?.pageNumber ?? 0;
+      try {
+        const pairs = await ocrExtractKeyValues(el.imageDataUrl, pageNum);
+        results.push({ page: pageNum, pairs });
+      } catch (err) {
+        console.error(`OCR page ${pageNum} failed:`, err);
+        results.push({ page: pageNum, pairs: [] });
+      }
+    }
+
+    setOcrResults(results);
+    setOcrLoading(false);
+  }, [imageElements, hasScanPages]);
+
+  // OCR 결과를 KV 패널에 추가
+  const addOcrToKv = useCallback(() => {
+    for (const r of ocrResults) {
+      for (const pair of r.pairs) {
+        if (!pair.key) continue;
+        const dummyPos: DocumentPosition = {
+          fileType: 'pdf',
+          sectionIndex: 0,
+          paragraphIndex: 0,
+          runIndex: 0,
+          charOffset: 0,
+          charLength: 0,
+          pageNumber: r.page,
+          domElementId: `ocr-p${r.page}-${uuid().slice(0, 6)}`,
+        };
+        addKvPair?.({
+          id: uuid(),
+          key: pair.key,
+          keyPosition: dummyPos,
+          value: pair.value,
+          valuePosition: dummyPos,
+          contentType: 'text',
+          notes: `OCR p${r.page} (${Math.round(pair.confidence * 100)}%)`,
+        });
+      }
+    }
+  }, [ocrResults, addKvPair]);
+
+  const totalOcrPairs = ocrResults.reduce((s, r) => s + r.pairs.length, 0);
+
   return (
-    <div
-      ref={wrapperRef}
-      className={`border rounded-lg overflow-auto bg-white shadow-inner ${editMode ? 'edit-mode ring-2 ring-blue-400' : ''}`}
-      style={{ maxHeight: 'calc(100vh - 300px)' }}
-    >
-      <div ref={contentRef} />
+    <div>
+      {/* OCR 컨트롤 패널 */}
+      {hasScanPages && (
+        <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                &#9888; 스캔 페이지 {imageElements.length}개 감지
+              </p>
+              <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                이미지 기반 페이지에서 AI가 표/양식/텍스트를 자동 추출합니다.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {ocrResults.length > 0 && totalOcrPairs > 0 && (
+                <button
+                  onClick={addOcrToKv}
+                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+                >
+                  KV에 추가 ({totalOcrPairs}쌍)
+                </button>
+              )}
+              <button
+                onClick={runOcr}
+                disabled={ocrLoading}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {ocrLoading ? '추출 중...' : 'AI OCR 추출'}
+              </button>
+            </div>
+          </div>
+
+          {/* OCR 결과 미리보기 */}
+          {ocrResults.length > 0 && (
+            <div className="mt-3 max-h-48 overflow-y-auto rounded border border-amber-200 bg-white p-2 dark:border-amber-800 dark:bg-zinc-900">
+              {ocrResults.map((r) => (
+                <div key={r.page} className="mb-2">
+                  <p className="text-[10px] font-bold text-zinc-500">Page {r.page} ({r.pairs.length}쌍)</p>
+                  {r.pairs.length === 0 && (
+                    <p className="text-[10px] text-zinc-400">추출된 항목 없음</p>
+                  )}
+                  <div className="space-y-0.5">
+                    {r.pairs.map((p, i) => (
+                      <div key={i} className="flex gap-2 text-[10px]">
+                        <span className="shrink-0 font-medium text-indigo-700 dark:text-indigo-400">{p.key}</span>
+                        <span className="text-zinc-500">:</span>
+                        <span className="text-zinc-700 dark:text-zinc-300">{p.value || '(빈값)'}</span>
+                        <span className="ml-auto text-zinc-400">{Math.round(p.confidence * 100)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
+        ref={wrapperRef}
+        className={`border rounded-lg overflow-auto bg-white shadow-inner ${editMode ? 'edit-mode ring-2 ring-blue-400' : ''}`}
+        style={{ maxHeight: 'calc(100vh - 300px)' }}
+      >
+        <div ref={contentRef} />
+      </div>
     </div>
   );
 }
