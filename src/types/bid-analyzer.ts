@@ -61,9 +61,14 @@ export interface DocumentSection {
 
 export interface DocumentElement {
   type: 'paragraph' | 'table' | 'image';
+  text?: string;
+  domId?: string;
   position: DocumentPosition;
   content: string;
   children?: DocumentElement[];
+  imageDataUrl?: string;       // 스캔 페이지 이미지 (base64)
+  ocrPairs?: OcrKeyValue[];    // OCR 추출 결과
+  ocrProcessed?: boolean;      // OCR 처리 완료 여부
   style?: {
     color: string;
     fontSize: number;
@@ -72,11 +77,17 @@ export interface DocumentElement {
   };
 }
 
+export interface OcrKeyValue {
+  key: string;
+  value: string;
+  confidence: number;         // 0.0 ~ 1.0
+}
+
 export interface DocumentModel {
   fileName: string;
-  fileType: FileType;
-  originalBlob: Blob;
-  sections: DocumentSection[];
+  fileType?: FileType;
+  originalBlob?: Blob;
+  sections: DocumentSection[] | DocumentElement[];
   charStyles?: Map<string, CharStyle>;
   renderedHtml: string;
   positionMap: Map<string, DocumentPosition>;

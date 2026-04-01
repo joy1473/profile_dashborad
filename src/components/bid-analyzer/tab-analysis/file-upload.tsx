@@ -6,6 +6,7 @@ import { useBidAnalyzerStore } from '@/store/bid-analyzer-store';
 import { getFileType } from '@/types/bid-analyzer';
 import { parseHwpx } from '@/lib/hwpx-parser';
 import { parseHwp } from '@/lib/hwp-parser';
+import { parsePdf } from '@/lib/pdf-parser';
 import { v4 as uuid } from 'uuid';
 import type { DocumentModel, DocumentPosition } from '@/types/bid-analyzer';
 
@@ -127,6 +128,10 @@ export function FileUpload() {
         const model = await parseHwp(file, file.name);
         setDocumentModel(model);
         uploaded.model = model;
+      } else if (fileType === 'pdf') {
+        const model = await parsePdf(file, file.name);
+        setDocumentModel(model);
+        uploaded.model = model;
       }
     } catch (err) {
       console.error('문서 파싱 오류:', err);
@@ -165,10 +170,10 @@ export function FileUpload() {
         파일을 드래그하거나 클릭하여 업로드
       </p>
       <p className="text-xs text-gray-500 mt-1">
-        HTML+CSS+이미지 (한글 변환 문서), HWP, HWPX 지원
+        HTML+CSS+이미지, HWP, HWPX, PDF (스캔 이미지 OCR 지원)
       </p>
       <div className="flex items-center justify-center gap-2 mt-3">
-        {['HTML', 'HWP', 'HWPX'].map((ext) => (
+        {['HTML', 'HWP', 'HWPX', 'PDF'].map((ext) => (
           <span key={ext} className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600">
             <FileText className="w-3 h-3 inline mr-0.5" />
             {ext}
