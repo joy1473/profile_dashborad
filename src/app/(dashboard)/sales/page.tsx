@@ -362,6 +362,7 @@ function LeadModal({ lead, onClose, onSave }: {
     contact: lead?.contact ?? "",
     phone: lead?.phone ?? "",
     email: lead?.email ?? "",
+    address: "",
     sido: parseSido(lead?.region ?? "서울특별시 금천구"),
     sigungu: parseSigungu(lead?.region ?? "서울특별시 금천구"),
     employeeCount: lead?.employeeCount ?? 10,
@@ -373,13 +374,17 @@ function LeadModal({ lead, onClose, onSave }: {
 
   const set = (key: string, value: string | number) => setForm((p) => ({ ...p, [key]: value }));
 
-  // 기업명 입력 시 지역 자동 감지
-  const handleCompanyChange = (v: string) => {
-    set("company", v);
-    const detected = detectRegion(v);
-    if (detected) {
-      setForm((p) => ({ ...p, company: v, sido: detected.sido, sigungu: detected.sigungu }));
-    }
+  // 주소 입력 시 지역 자동 감지
+  const handleAddressChange = (v: string) => {
+    setForm((p) => {
+      const next = { ...p, address: v };
+      const detected = detectRegion(v);
+      if (detected) {
+        next.sido = detected.sido;
+        next.sigungu = detected.sigungu;
+      }
+      return next;
+    });
   };
 
   // 시도 변경 시 시군구 초기화
@@ -401,10 +406,13 @@ function LeadModal({ lead, onClose, onSave }: {
           <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X size={18} /></button>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Input label="기업명 (지역 자동감지)" value={form.company} onChange={handleCompanyChange} />
+          <Input label="기업명" value={form.company} onChange={(v) => set("company", v)} />
           <Input label="담당자" value={form.contact} onChange={(v) => set("contact", v)} />
           <Input label="전화번호" value={form.phone} onChange={(v) => set("phone", v)} />
           <Input label="이메일" value={form.email} onChange={(v) => set("email", v)} />
+          <div className="col-span-2">
+            <Input label="주소 (입력 시 지역 자동감지)" value={form.address} onChange={handleAddressChange} placeholder="예: 서울시 구로구 디지털로34길 55" />
+          </div>
           <Select label="시도" value={form.sido} options={getSidoList()} onChange={handleSidoChange} />
           <Select label="시군구" value={form.sigungu} options={getSigunguList(form.sido)} onChange={(v) => set("sigungu", v)} />
           <Input label="직원수" type="number" value={String(form.employeeCount)} onChange={(v) => set("employeeCount", Number(v))} />
@@ -467,11 +475,11 @@ function CourseModal({ onClose, onSave }: {
 
 /* ── 공통 UI ── */
 
-function Input({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
+function Input({ label, value, onChange, type = "text", placeholder }: { label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string }) {
   return (
     <div>
       <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{label}</label>
-      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs placeholder:text-zinc-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
     </div>
   );
 }
