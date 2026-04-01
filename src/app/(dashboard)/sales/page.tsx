@@ -47,15 +47,15 @@ export default function SalesPage() {
   const [editingLead, setEditingLead] = useState<SalesLead | null>(null);
   const [showCourseModal, setShowCourseModal] = useState(false);
 
-  const reload = useCallback(() => {
-    setLeads(getLeads());
-    setCourses(getCourses());
-    setPipeline(getPipelineSummary());
+  const reload = useCallback(async () => {
+    const [l, c, p] = await Promise.all([getLeads(), getCourses(), getPipelineSummary()]);
+    setLeads(l);
+    setCourses(c);
+    setPipeline(p);
   }, []);
 
   useEffect(() => {
-    seedDemoData();
-    reload();
+    seedDemoData().then(() => reload());
     getSession().then((s) => {
       if (s?.user) setUserName(s.user.user_metadata?.full_name ?? s.user.email ?? "");
     });
@@ -192,7 +192,7 @@ export default function SalesPage() {
                     <td className="px-3 py-2.5 text-center">
                       <div className="flex justify-center gap-1">
                         <button onClick={() => { setEditingLead(l); setShowModal(true); }} className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"><Edit2 size={12} /></button>
-                        <button onClick={() => { deleteLead(l.id); reload(); }} className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"><Trash2 size={12} /></button>
+                        <button onClick={async () => { await deleteLead(l.id); await reload(); }} className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"><Trash2 size={12} /></button>
                       </div>
                     </td>
                   </tr>
@@ -239,10 +239,10 @@ export default function SalesPage() {
         <LeadModal
           lead={editingLead}
           onClose={() => { setShowModal(false); setEditingLead(null); }}
-          onSave={(data) => {
-            if (editingLead) updateLead(editingLead.id, data);
-            else createLead({ ...data, assignedTo: "", createdAt: "", updatedAt: "" } as Omit<SalesLead, "id" | "createdAt" | "updatedAt">);
-            reload();
+          onSave={async (data) => {
+            if (editingLead) await updateLead(editingLead.id, data);
+            else await createLead({ ...data, assignedTo: "" } as Omit<SalesLead, "id" | "createdAt" | "updatedAt">);
+            await reload();
             setShowModal(false);
             setEditingLead(null);
           }}
@@ -253,7 +253,7 @@ export default function SalesPage() {
       {showCourseModal && (
         <CourseModal
           onClose={() => setShowCourseModal(false)}
-          onSave={(data) => { createCourse(data); reload(); setShowCourseModal(false); }}
+          onSave={async (data) => { await createCourse(data); await reload(); setShowCourseModal(false); }}
         />
       )}
     </div>
@@ -277,11 +277,11 @@ function SettlementPanel({ courses }: { courses: CourseRun[] }) {
 
   const settlement = calculateSettlement(
     new Date().toISOString().substring(0, 7),
+    totalRevenue,
     team,
     isAI
   );
 
-  // 실 매출 기반으로 재계산
   const items = team.map((m) => {
     const ratios: Record<string, number> = { 영업: 22, 강사: 24, 행정: 13, 운영비: 10, 순마진: 17 };
     const ratio = ratios[m.role] || 10;

@@ -1,71 +1,226 @@
-import type { SalesLead, CourseRun, MonthlySettlement, PipelineSummary, LeadStatus } from "@/types/sales";
+import { supabase, isSupabaseConfigured } from "./supabase";
+import type { SalesLead, CourseRun, MonthlySettlement, PipelineSummary, LeadStatus, SettlementItem } from "@/types/sales";
 
-// ── 로컬 스토리지 기반 CRUD (Supabase 미설정 시) ──
+// ════════════════════════════════════════
+// Supabase 연동 + localStorage fallback
+// ════════════════════════════════════════
 
+const USE_SUPABASE = isSupabaseConfigured;
 const LEADS_KEY = "sales_leads";
 const COURSES_KEY = "sales_courses";
 
-function loadFromStorage<T>(key: string): T[] {
+// ── localStorage helpers ──
+
+function loadLocal<T>(key: string): T[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(key);
   return raw ? JSON.parse(raw) : [];
 }
 
-function saveToStorage<T>(key: string, data: T[]): void {
+function saveLocal<T>(key: string, data: T[]): void {
   localStorage.setItem(key, JSON.stringify(data));
 }
 
-// ── Leads CRUD ──
+// ── Row mapper (snake_case → camelCase) ──
 
-export function getLeads(): SalesLead[] {
-  return loadFromStorage<SalesLead>(LEADS_KEY);
-}
-
-export function createLead(input: Omit<SalesLead, "id" | "createdAt" | "updatedAt">): SalesLead {
-  const leads = getLeads();
-  const lead: SalesLead = {
-    ...input,
-    id: crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+function mapLeadRow(row: Record<string, unknown>): SalesLead {
+  return {
+    id: row.id as string,
+    company: row.company as string,
+    contact: (row.contact as string) ?? "",
+    phone: (row.phone as string) ?? "",
+    email: (row.email as string) ?? "",
+    region: (row.region as string) ?? "",
+    employeeCount: (row.employee_count as number) ?? 0,
+    status: row.status as LeadStatus,
+    courseType: row.course_type as SalesLead["courseType"],
+    expectedRevenue: (row.expected_revenue as number) ?? 0,
+    assignedTo: (row.assigned_to as string) ?? "",
+    notes: (row.notes as string) ?? "",
+    createdAt: (row.created_at as string) ?? "",
+    updatedAt: (row.updated_at as string) ?? "",
   };
-  leads.unshift(lead);
-  saveToStorage(LEADS_KEY, leads);
-  return lead;
 }
 
-export function updateLead(id: string, updates: Partial<SalesLead>): SalesLead | null {
-  const leads = getLeads();
-  const idx = leads.findIndex((l) => l.id === id);
-  if (idx === -1) return null;
-  leads[idx] = { ...leads[idx], ...updates, updatedAt: new Date().toISOString() };
-  saveToStorage(LEADS_KEY, leads);
-  return leads[idx];
+function mapCourseRow(row: Record<string, unknown>): CourseRun {
+  return {
+    id: row.id as string,
+    title: row.title as string,
+    courseType: row.course_type as CourseRun["courseType"],
+    startDate: (row.start_date as string) ?? "",
+    endDate: (row.end_date as string) ?? "",
+    students: (row.students as number) ?? 0,
+    hours: (row.hours as number) ?? 0,
+    revenue: (row.revenue as number) ?? 0,
+    govSupport: (row.gov_support as number) ?? 0,
+    status: row.status as CourseRun["status"],
+    leadId: (row.lead_id as string) ?? undefined,
+    instructorId: (row.instructor_id as string) ?? undefined,
+  };
 }
 
-export function deleteLead(id: string): void {
-  const leads = getLeads().filter((l) => l.id !== id);
-  saveToStorage(LEADS_KEY, leads);
+// ════════════════════════════════════════
+// Leads CRUD
+// ════════════════════════════════════════
+
+export async function getLeads(): Promise<SalesLead[]> {
+  if (!USE_SUPABASE) return loadLocal<SalesLead>(LEADS_KEY);
+
+  const { data, error } = await supabase
+    .from("sales_leads")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) { console.error("getLeads:", error); return []; }
+  return (data ?? []).map(mapLeadRow);
 }
 
-// ── Courses CRUD ──
+export async function createLead(
+  input: Omit<SalesLead, "id" | "createdAt" | "updatedAt">
+): Promise<SalesLead> {
+  if (!USE_SUPABASE) {
+    const leads = loadLocal<SalesLead>(LEADS_KEY);
+    const lead: SalesLead = {
+      ...input,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    leads.unshift(lead);
+    saveLocal(LEADS_KEY, leads);
+    return lead;
+  }
 
-export function getCourses(): CourseRun[] {
-  return loadFromStorage<CourseRun>(COURSES_KEY);
+  const { data, error } = await supabase
+    .from("sales_leads")
+    .insert({
+      company: input.company,
+      contact: input.contact,
+      phone: input.phone,
+      email: input.email,
+      region: input.region,
+      employee_count: input.employeeCount,
+      status: input.status,
+      course_type: input.courseType,
+      expected_revenue: input.expectedRevenue,
+      assigned_to: input.assignedTo || null,
+      notes: input.notes,
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return mapLeadRow(data);
 }
 
-export function createCourse(input: Omit<CourseRun, "id">): CourseRun {
-  const courses = getCourses();
-  const course: CourseRun = { ...input, id: crypto.randomUUID() };
-  courses.unshift(course);
-  saveToStorage(COURSES_KEY, courses);
-  return course;
+export async function updateLead(
+  id: string,
+  updates: Partial<SalesLead>
+): Promise<SalesLead | null> {
+  if (!USE_SUPABASE) {
+    const leads = loadLocal<SalesLead>(LEADS_KEY);
+    const idx = leads.findIndex((l) => l.id === id);
+    if (idx === -1) return null;
+    leads[idx] = { ...leads[idx], ...updates, updatedAt: new Date().toISOString() };
+    saveLocal(LEADS_KEY, leads);
+    return leads[idx];
+  }
+
+  // camelCase → snake_case
+  const payload: Record<string, unknown> = {};
+  if (updates.company !== undefined) payload.company = updates.company;
+  if (updates.contact !== undefined) payload.contact = updates.contact;
+  if (updates.phone !== undefined) payload.phone = updates.phone;
+  if (updates.email !== undefined) payload.email = updates.email;
+  if (updates.region !== undefined) payload.region = updates.region;
+  if (updates.employeeCount !== undefined) payload.employee_count = updates.employeeCount;
+  if (updates.status !== undefined) payload.status = updates.status;
+  if (updates.courseType !== undefined) payload.course_type = updates.courseType;
+  if (updates.expectedRevenue !== undefined) payload.expected_revenue = updates.expectedRevenue;
+  if (updates.assignedTo !== undefined) payload.assigned_to = updates.assignedTo || null;
+  if (updates.notes !== undefined) payload.notes = updates.notes;
+
+  const { data, error } = await supabase
+    .from("sales_leads")
+    .update(payload)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) { console.error("updateLead:", error); return null; }
+  return mapLeadRow(data);
 }
 
-// ── Pipeline 집계 ──
+export async function deleteLead(id: string): Promise<void> {
+  if (!USE_SUPABASE) {
+    const leads = loadLocal<SalesLead>(LEADS_KEY).filter((l) => l.id !== id);
+    saveLocal(LEADS_KEY, leads);
+    return;
+  }
 
-export function getPipelineSummary(): PipelineSummary[] {
-  const leads = getLeads();
+  const { error } = await supabase
+    .from("sales_leads")
+    .delete()
+    .eq("id", id);
+
+  if (error) throw new Error(error.message);
+}
+
+// ════════════════════════════════════════
+// Courses CRUD
+// ════════════════════════════════════════
+
+export async function getCourses(): Promise<CourseRun[]> {
+  if (!USE_SUPABASE) return loadLocal<CourseRun>(COURSES_KEY);
+
+  const { data, error } = await supabase
+    .from("course_runs")
+    .select("*")
+    .order("start_date", { ascending: false });
+
+  if (error) { console.error("getCourses:", error); return []; }
+  return (data ?? []).map(mapCourseRow);
+}
+
+export async function createCourse(
+  input: Omit<CourseRun, "id">
+): Promise<CourseRun> {
+  if (!USE_SUPABASE) {
+    const courses = loadLocal<CourseRun>(COURSES_KEY);
+    const course: CourseRun = { ...input, id: crypto.randomUUID() };
+    courses.unshift(course);
+    saveLocal(COURSES_KEY, courses);
+    return course;
+  }
+
+  const { data, error } = await supabase
+    .from("course_runs")
+    .insert({
+      title: input.title,
+      course_type: input.courseType,
+      start_date: input.startDate || null,
+      end_date: input.endDate || null,
+      students: input.students,
+      hours: input.hours,
+      revenue: input.revenue,
+      gov_support: input.govSupport,
+      status: input.status,
+      lead_id: input.leadId || null,
+      instructor_id: input.instructorId || null,
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return mapCourseRow(data);
+}
+
+// ════════════════════════════════════════
+// Pipeline 집계
+// ════════════════════════════════════════
+
+export async function getPipelineSummary(): Promise<PipelineSummary[]> {
+  const leads = await getLeads();
   const statuses: LeadStatus[] = ["신규", "접촉중", "제안", "협상", "계약", "완료", "보류"];
   return statuses.map((status) => {
     const filtered = leads.filter((l) => l.status === status);
@@ -77,7 +232,9 @@ export function getPipelineSummary(): PipelineSummary[] {
   });
 }
 
-// ── MM 정산 계산 ──
+// ════════════════════════════════════════
+// MM 정산 계산
+// ════════════════════════════════════════
 
 const DEFAULT_RATIOS: Record<string, { aiPct: number; normalPct: number }> = {
   영업: { aiPct: 22, normalPct: 12 },
@@ -89,39 +246,33 @@ const DEFAULT_RATIOS: Record<string, { aiPct: number; normalPct: number }> = {
 
 export function calculateSettlement(
   yearMonth: string,
+  totalRevenue: number,
   teamMembers: { role: string; name: string; hours: number }[],
   isAI: boolean
 ): MonthlySettlement {
-  const courses = getCourses().filter(
-    (c) => c.startDate.startsWith(yearMonth) || c.endDate.startsWith(yearMonth)
-  );
-  const totalRevenue = courses.reduce((sum, c) => sum + c.revenue, 0);
-
-  const items = teamMembers.map((m) => {
+  const items: SettlementItem[] = teamMembers.map((m) => {
     const ratioSet = DEFAULT_RATIOS[m.role] || { aiPct: 10, normalPct: 10 };
     const ratio = isAI ? ratioSet.aiPct : ratioSet.normalPct;
     return {
-      role: m.role as "영업" | "강사" | "행정" | "관리자",
+      role: m.role as SettlementItem["role"],
       name: m.name,
       ratio,
       amount: Math.round(totalRevenue * ratio / 100),
       hours: m.hours,
-      mm: Math.round((m.hours / 160) * 100) / 100,
+      mm: m.hours > 0 ? Math.round((m.hours / 160) * 100) / 100 : 0,
     };
   });
 
-  return {
-    id: crypto.randomUUID(),
-    yearMonth,
-    totalRevenue,
-    items,
-  };
+  return { id: crypto.randomUUID(), yearMonth, totalRevenue, items };
 }
 
-// ── Demo 데이터 시딩 ──
+// ════════════════════════════════════════
+// 데모 데이터 시딩 (localStorage only)
+// ════════════════════════════════════════
 
-export function seedDemoData(): void {
-  if (getLeads().length > 0) return;
+export async function seedDemoData(): Promise<void> {
+  if (USE_SUPABASE) return; // Supabase 사용 시 시딩 안함
+  if (loadLocal(LEADS_KEY).length > 0) return;
 
   const demoLeads: Omit<SalesLead, "id" | "createdAt" | "updatedAt">[] = [
     { company: "(주)디지털공작소", contact: "김민수", phone: "02-123-4567", email: "kim@dgjs.kr", region: "금천구", employeeCount: 25, status: "신규", courseType: "AI_6H", expectedRevenue: 3000, assignedTo: "", notes: "가산디지털단지 IT기업, AI도입 관심" },
@@ -132,7 +283,7 @@ export function seedDemoData(): void {
     { company: "넥스트ERP", contact: "한도윤", phone: "02-678-9012", email: "han@nexterp.co.kr", region: "구로구", employeeCount: 50, status: "완료", courseType: "AI_40H", expectedRevenue: 20000, assignedTo: "", notes: "ERP AI 자동화 완료" },
   ];
 
-  demoLeads.forEach((l) => createLead(l));
+  for (const l of demoLeads) await createLead(l);
 
   const demoCourses: Omit<CourseRun, "id">[] = [
     { title: "AI 실무 맛보기 (6H) - 1기", courseType: "AI_6H", startDate: "2026-05-15", endDate: "2026-05-15", students: 15, hours: 6, revenue: 4500, govSupport: 4050, status: "완료" },
@@ -140,5 +291,5 @@ export function seedDemoData(): void {
     { title: "산업맞춤 AI 심화 (40H)", courseType: "AI_40H", startDate: "2026-07-01", endDate: "2026-08-30", students: 10, hours: 40, revenue: 25000, govSupport: 22500, status: "예정" },
   ];
 
-  demoCourses.forEach((c) => createCourse(c));
+  for (const c of demoCourses) await createCourse(c);
 }
