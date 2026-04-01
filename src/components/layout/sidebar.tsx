@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, BarChart3, Users, Video, QrCode, Columns3, Network, Megaphone } from "lucide-react";
+import { CalendarDays, BarChart3, Users, Video, QrCode, Columns3, Network, Megaphone, HandCoins } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -14,6 +14,7 @@ const navItems = [
   { href: "/qr-cards", label: "QR명함", icon: QrCode },
   { href: "/settings", label: "회의", icon: Video },
   { href: "/banner", label: "배너", icon: Megaphone },
+  { href: "/sales", label: "영업관리", icon: HandCoins },
 ];
 
 export function Sidebar() {
